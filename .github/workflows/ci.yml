@@ -28,5 +28,5 @@ jobs:
             python -m scripts.prepare_vscode
 
       - name: Remove demo containers
-        if: always()
+        if: ${{ always() && hashFiles('compose.yaml') != '' }}
         run: docker compose --file compose.yaml down --remove-orphans --volumes

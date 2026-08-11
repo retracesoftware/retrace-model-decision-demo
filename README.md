@@ -13,7 +13,7 @@ model again.
 The complete proof includes:
 
 1. A real `qwen3:1.7b` model served by Ollama.
-2. Microsoft's official Responses-compatible agent host.
+2. A provider-neutral HTTP agent API.
 3. One short-lived `retracepython` worker and one recording per invocation.
 4. Different material decisions from identical live model requests.
 5. Ten exact replays of one selected decision with Docker networking disabled.
@@ -21,9 +21,8 @@ The complete proof includes:
    decision logic.
 7. A VS Code Dev Container configured with the Retrace debugger extension.
 
-This demo records the model's externally visible structured response and its
-concise stated reason. It does not claim to expose hidden chain-of-thought or
-the model's internal neural execution.
+The demo captures the model response and the complete Python decision path
+that validates it, converts its score into an action, and returns the result.
 
 ## Why This Matters
 
@@ -96,8 +95,6 @@ The demo runs in a pinned Linux/amd64 Python 3.12.13 container. It installs:
 ```text
 retracesoftware==0.2.25
 retracesoftware-dap==0.2.25
-azure-ai-agentserver-core==2.0.0
-azure-ai-agentserver-responses==2.0.0b1
 ```
 
 You do not need Python or Retrace installed on the host. Docker supplies the
@@ -170,9 +167,9 @@ model and builds the Python 3.12 image, so it takes longer than later runs.
 2. Pulls `qwen3:1.7b` through Ollama.
 3. Verifies the model digest expected by this reviewed demo.
 4. Builds the pinned Python 3.12.13 Linux/amd64 image.
-5. Starts Microsoft's `ResponsesAgentServerHost` on port `8088`.
+5. Starts the provider-neutral agent API on port `8088`.
 6. Starts the HTTP model gateway connected to the real Ollama model.
-7. Sends the exact same Responses request repeatedly.
+7. Sends the exact same agent request repeatedly.
 8. Runs every invocation in a separate short-lived `retracepython` worker.
 9. Creates one `.retrace` recording and manifest per live invocation.
 10. Continues until the model has produced at least two distinct application
@@ -251,7 +248,7 @@ generated/recordings/selected-decision.retrace
 generated/recordings/selected-decision.expected.json
 generated/recordings/selected-decision.code-workspace
 generated/manifests/*.json
-generated/responses/live-*.json
+generated/decisions/live-*.json
 generated/replay/replay-01.log ... replay-10.log
 generated/transcripts/dap.json
 generated/counters/model-gateway.json
@@ -470,11 +467,11 @@ The tests cover:
 
 - strict model-output validation
 - score-to-action policy boundaries
-- stable prompt and Responses request construction
+- stable prompt and agent request construction
 - enabled nondeterministic sampling with no supplied seed
 - exact request hashing
 - one worker and recording per invocation
-- Microsoft Responses-host behavior
+- provider-neutral agent API behavior
 - parent/worker environment and secret isolation
 - DAP access to the bundled historical recording in CI
 
@@ -547,7 +544,8 @@ version first.
 ### The model did not produce two decisions
 
 Variation is genuine, not scripted. The proof allows up to 20 identical live
-calls. If all 20 valid outputs map to one action, the command fails honestly.
+calls. If all 20 valid outputs map to one action, the command stops without
+manufacturing a different result.
 Run it again rather than editing the prompt, thresholds, or recorded output
 during a presentation.
 
@@ -583,16 +581,16 @@ Check that:
 If necessary, stop the debug session, run **Developer: Reload Window**, start
 the recorded process again, wait for scanning, and press `F5`.
 
-## Architecture And Claim Boundaries
+## Architecture
 
 The runtime shape is:
 
 ```text
 host operator / VS Code
         |
-        | identical POST /responses
+        | identical POST /decisions
         v
-Microsoft ResponsesAgentServerHost (not recorded)
+provider-neutral agent API (not recorded)
         |
         | sanitized subprocess environment
         v
@@ -612,13 +610,12 @@ server lifecycle and platform context. A sanitized worker records one finite
 invocation. The recording therefore preserves the application/model boundary
 without capturing parent credentials.
 
-This repository proves a real Microsoft Responses-contract-compatible local
-agent architecture. It does not claim that this exact image has been deployed
-to Microsoft Foundry, that Ollama is an Azure-hosted model, or that Retrace can
-inspect private model internals.
+The HTTP agent layer and model gateway are provider-neutral. Another model or
+host can replace either boundary without changing Retrace's record, replay,
+or debugger contract.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full process,
-record/replay, debugger, security, and Microsoft compatibility design.
+record/replay, debugger, security, and portability design.
 
 ## Cleanup
 

@@ -26,9 +26,6 @@ services:
     environment:
       <<: *demo-environment
       MODEL_GATEWAY_URL: http://model-gateway:8091
-      FOUNDRY_AGENT_ID: demo-agent-model-decision
-      FOUNDRY_AGENT_NAME: retrace-model-decision-recorder
-      FOUNDRY_AGENT_VERSION: 0.1.0
       DEMO_PARENT_SECRET: RETRACE_PARENT_SECRET_MUST_NOT_ENTER_RECORDING
     ports:
       - "127.0.0.1:8088:8088"
@@ -64,4 +61,3 @@ services:
 networks:
   demo:
     driver: bridge
-

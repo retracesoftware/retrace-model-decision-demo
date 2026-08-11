@@ -43,7 +43,7 @@ def reset_generated() -> None:
         "recordings",
         "replay",
         "requests",
-        "responses",
+        "decisions",
         "transcripts",
     ):
         (GENERATED / name).mkdir(parents=True, exist_ok=True)

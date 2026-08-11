@@ -7,9 +7,9 @@ The complete proof passed on Python 3.12.13 with the real local
 
 - Identical live application input: yes
 - Identical exact model request hash: `c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76`
-- Distinct live model decisions: `approve_refund`, `escalate_specialist`
+- Distinct live model decisions: `escalate_specialist`, `request_more_information`
 - Every live invocation recorded separately: yes
-- Selected historical recording: `/Users/danielpatrascanu/cookbook/examples/invoice-parser/retrace-demo/model-decision/generated/recordings/selected-decision.retrace`
+- Selected historical recording: `example-artifacts/selected-decision.retrace`
 - Fresh offline replays: 10 of 10 exact matches
 - Model calls during replay: 0
 - Docker replay network: disabled
@@ -17,15 +17,16 @@ The complete proof passed on Python 3.12.13 with the real local
 
 ## Live Model Decisions
 
-The same Microsoft Responses-compatible request and the same model request were
-sent on every row. Different rows are separate real Qwen inferences, not
-hardcoded responses or application-side random selection.
+The same agent request and the same model request were sent on every row.
+Different rows are separate real Qwen inferences, not hardcoded responses or
+application-side random selection.
 
 | Run | Review score | Application decision | Visible model rationale | Response hash | Recording ID |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 85 | `escalate_specialist` | The refund request is eligible based on the photo evidence of packaging damage and the lack of safety-criticality. The requester has valid account history and no prior refunds. The exclusion of serial number obscuration does not affect refund eligibility. | `0d60257ea13f6edd` | `decision-3cb76e41-a5cb-4d75-9e53-257d8cdcdf07` |
-| 2 | 70 | `escalate_specialist` | The refund request is eligible based on the evidence provided. The packaging damage is documented, the accessory is not safety-critical, and the customer has a clean history. However, the partial obscortion of the serial number may affect the authenticity of the claim. A discretionary review is recommended to ensure compliance with quality and safety standards. | `34de1d608f2d5080` | `decision-72396b73-d853-4c45-a07f-c5bf6fd11cff` |
-| 3 | 40 | `approve_refund` | The request shows a pattern of carefully crafted claims and incomplete information, while the remaining details (e.g., serial number) could be manipulated. The lack of safety-critical status and the absence of earlier complaints suggest the claim may be staged or misworded. | `d4f5d8547f7e09a3` | `decision-2e7826e4-6efb-46ba-bc5a-07b0bf1b8fae` |
+| 1 | 65 | `request_more_information` | The request is appropriately initiated within the self-service window, the damage is documented with a photo, and the customer has a clean account history. The accessory is not safety-critical, and the damage does not meet the threshold for a full refund. A discretionary review score of 65 is appropriate, as the case is borderline and requires expert evaluation for final determination. | `1078a65d89dd79df` | `decision-bb080474-1347-4e0b-99c8-3173ce3052c6` |
+| 2 | 65 | `request_more_information` | The request presents a borderline scenario. The photo provides sufficient evidence of damaged packaging, and the user has a clean history. However, the obscured serial number could complicate verification. Since there is no evidence of a safety-critical issue, the refund can be processed based on current evidence. A discretionary review score of 65 is appropriate. | `d7ecf65d796407c2` | `decision-3b963bcb-2dc8-4acb-9cbe-fdcfaedfc00c` |
+| 3 | 65 | `request_more_information` | The refund request is valid under self-service policies, the damage is evident in the photo, and the accessory is non-safety-critical. The case is borderline but suitable for immediate approval with a discretionary review score of 65. | `c002366ce1ccd86a` | `decision-b8e7a8bf-0806-474e-aaf4-47f78fb327f8` |
+| 4 | 78 | `escalate_specialist` | The customer’s request reflects a legitimate claim for a refund due to damaged goods. The photo provides substantial evidence of packaging damage, and the account history demonstrates trustworthiness. While the serial number’s partial obstruction may slightly hinder verification, the damage is manifest and the product is not safety-critical. The issue is straightforward and within the standard refund process. The customer’s account history reinforces the likelihood of a justified claim. | `2bac412a74e5b268` | `decision-58427c39-e534-4282-819a-58ac6f4a7216` |
 
 ## Selected Historical Decision Replayed Ten Times
 
@@ -36,16 +37,16 @@ response ID.
 
 | Replay | Decision | Historical response ID | Output hash | Exact match |
 | ---: | --- | --- | --- | --- |
-| 1 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 2 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 3 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 4 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 5 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 6 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 7 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 8 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 9 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
-| 10 | `escalate_specialist` | `MODEL-37E9AC743286` | `e4f597da6b659f99` | yes |
+| 1 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 2 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 3 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 4 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 5 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 6 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 7 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 8 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 9 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
+| 10 | `request_more_information` | `MODEL-932DCB4032D4` | `64311a1d9caf4389` | yes |
 
 ## Debugger Evidence
 
@@ -56,10 +57,5 @@ Retrace DAP replayed the selected recording, stopped in
 the decision function and
 forward replay returned to the same decision point.
 
-## Honest Scope
-
-The demo captures the model's externally visible assessment and its concise
-rationale. It does not claim to expose private hidden chain-of-thought.
-The proof is that a nondeterministic external model decision does not disappear
-after production moves on: Retrace preserves that exact invocation for offline,
-repeatable replay and debugging.
+Retrace preserves the selected model invocation for exact offline replay and
+repeatable debugging after production has moved on.

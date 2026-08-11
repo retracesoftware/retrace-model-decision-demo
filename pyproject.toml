@@ -4,12 +4,9 @@ version = "0.1.0"
 description = "Record and replay a genuinely nondeterministic AI decision"
 requires-python = "==3.12.*"
 dependencies = [
-    "azure-ai-agentserver-core==2.0.0",
-    "azure-ai-agentserver-responses==2.0.0b1",
     "retracesoftware==0.2.25",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-

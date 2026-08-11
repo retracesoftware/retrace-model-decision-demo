@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import subprocess
 
@@ -8,8 +7,8 @@ import pytest
 
 from agent.invocation_runner import _worker_environment
 from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
+from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
-from scripts.responses_client import response_request
 from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import dap_value_matches
 
@@ -26,9 +25,9 @@ def test_model_request_hash_is_stable_and_sensitive() -> None:
     assert sha256_json(payload) != sha256_json({"messages": ["changed"]})
 
 
-def test_responses_request_is_identical_across_live_invocations() -> None:
-    first = response_request()
-    second = response_request()
+def test_agent_request_is_identical_across_live_invocations() -> None:
+    first = decision_request()
+    second = decision_request()
     assert first == second
     assert first["input"] == CASE["user_prompt"]
 
@@ -40,13 +39,7 @@ def test_recorded_worker_environment_excludes_parent_secrets(tmp_path) -> None:
         recording_id="decision-test",
     )
     assert "DEMO_PARENT_SECRET" not in environment
-    assert "FOUNDRY_PROJECT_ENDPOINT" not in environment
     assert environment["RETRACE_RECORDING_ID"] == "decision-test"
-
-
-def test_invocation_lock_is_not_part_of_worker_environment() -> None:
-    event = asyncio.Event()
-    assert not event.is_set()
 
 
 def test_docker_preflight_explains_an_unreachable_engine(monkeypatch) -> None:

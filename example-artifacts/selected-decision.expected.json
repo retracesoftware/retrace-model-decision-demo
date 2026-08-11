@@ -1,11 +1,11 @@
 {
   "case_id": "CASE-MODEL-NONDETERMINISM-001",
-  "created_at": "2026-08-11T13:05:44.085743Z",
-  "decision": "escalate_specialist",
-  "gateway_response_id": "MODEL-37E9AC743286",
+  "created_at": "2026-08-11T14:52:01.773054Z",
+  "decision": "request_more_information",
+  "gateway_response_id": "MODEL-932DCB4032D4",
   "model": "qwen3:1.7b",
   "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-  "model_response_sha256": "0d60257ea13f6edd2e9eb166d38cd028600b1f185733aecaf0cf0cc821d1e91c",
-  "reason": "The refund request is eligible based on the photo evidence of packaging damage and the lack of safety-criticality. The requester has valid account history and no prior refunds. The exclusion of serial number obscuration does not affect refund eligibility.",
-  "review_score": 85
+  "model_response_sha256": "1078a65d89dd79df20ef1965208bb2c7b089b29e51662681341aebe95cb29aba",
+  "reason": "The request is appropriately initiated within the self-service window, the damage is documented with a photo, and the customer has a clean account history. The accessory is not safety-critical, and the damage does not meet the threshold for a full refund. A discretionary review score of 65 is appropriate, as the case is borderline and requires expert evaluation for final determination.",
+  "review_score": 65
 }

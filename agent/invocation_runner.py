@@ -54,7 +54,7 @@ def _utc_now() -> str:
 async def run_recorded_invocation(
     *,
     request_payload: dict[str, Any],
-    foundry_context: dict[str, str | None],
+    request_context: dict[str, str | None],
     cancellation_signal: asyncio.Event,
 ) -> InvocationResult:
     recording_id = f"decision-{uuid.uuid4()}"
@@ -122,9 +122,9 @@ async def run_recorded_invocation(
         ),
         "request_sha256": sha256_text(request_json),
         "source_sha256": _source_hash(),
-        "foundry_call_id": foundry_context.get("call_id"),
-        "foundry_user_id": foundry_context.get("user_id"),
-        "foundry_session_id": foundry_context.get("session_id"),
+        "request_id": request_context.get("request_id"),
+        "user_id": request_context.get("user_id"),
+        "session_id": request_context.get("session_id"),
         "worker_exit_code": worker_exit_code,
         "recording_available": recording_available,
         "started_at": started_at,

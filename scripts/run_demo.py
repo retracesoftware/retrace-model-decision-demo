@@ -12,8 +12,8 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from agent.manifest import sha256_file
+from scripts.agent_client import decision_request, post_decision
 from scripts.demo_state import GENERATED, ROOT, canonical_json, reset_generated
-from scripts.responses_client import post_response, response_request
 
 
 COMPOSE = ["docker", "compose", "--file", str(ROOT / "compose.yaml")]
@@ -149,8 +149,8 @@ def manifest_paths() -> set[Path]:
 
 def invoke_live(number: int) -> dict[str, Any]:
     before = manifest_paths()
-    status, response = post_response("http://localhost:8088/responses")
-    response_path = GENERATED / "responses" / f"live-{number:02d}.json"
+    status, response = post_decision("http://localhost:8088/decisions")
+    response_path = GENERATED / "decisions" / f"live-{number:02d}.json"
     response_path.write_text(
         json.dumps({"status": status, "body": response}, indent=2, sort_keys=True)
         + "\n"
@@ -326,7 +326,7 @@ def write_results(
         "python": "3.12.13",
         "model": OLLAMA_MODEL,
         "model_digest": model["digest"],
-        "identical_responses_request": response_request(),
+        "identical_agent_request": decision_request(),
         "live_invocations": live,
         "distinct_live_decisions": decisions,
         "model_request_sha256_values": request_hashes,
@@ -369,9 +369,9 @@ The complete proof passed on Python 3.12.13 with the real local
 
 ## Live Model Decisions
 
-The same Microsoft Responses-compatible request and the same model request were
-sent on every row. Different rows are separate real Qwen inferences, not
-hardcoded responses or application-side random selection.
+The same agent request and the same model request were sent on every row.
+Different rows are separate real Qwen inferences, not hardcoded responses or
+application-side random selection.
 
 | Run | Review score | Application decision | Visible model rationale | Response hash | Recording ID |
 | ---: | ---: | --- | --- | --- | --- |
@@ -397,13 +397,8 @@ Retrace DAP replayed the selected recording, stopped in
 the decision function and
 forward replay returned to the same decision point.
 
-## Honest Scope
-
-The demo captures the model's externally visible assessment and its concise
-rationale. It does not claim to expose private hidden chain-of-thought.
-The proof is that a nondeterministic external model decision does not disappear
-after production moves on: Retrace preserves that exact invocation for offline,
-repeatable replay and debugging.
+Retrace preserves the selected model invocation for exact offline replay and
+repeatable debugging after production has moved on.
 """
     (GENERATED / "DEMO_RESULTS.md").write_text(report)
 
@@ -442,9 +437,7 @@ def main() -> None:
         if not args.skip_build:
             compose("build")
 
-        heading(
-            "2. Start the Microsoft Responses-compatible agent and real model gateway"
-        )
+        heading("2. Start the agent API and real model gateway")
         compose("up", "--detach", "--wait")
 
         heading(

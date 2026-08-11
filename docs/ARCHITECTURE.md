@@ -18,9 +18,9 @@ RNG, or replay-only fixture to create the differing decisions.
 ```text
 Host VS Code / operator
         |
-        | identical POST /responses
+        | identical POST /decisions
         v
-Microsoft ResponsesAgentServerHost (not recorded)
+provider-neutral agent API (not recorded)
         |
         | one sanitized subprocess per invocation
         v
@@ -96,15 +96,10 @@ At `RETRACE_MODEL_DECISION_BREAKPOINT`, DAP must expose the original
 metadata and hashes. Reverse navigation is claimed only within the active
 Python function.
 
-## Microsoft Compatibility
+## Portability
 
-The parent uses Microsoft's official `ResponsesAgentServerHost`, which provides
-the hosted-agent `/readiness` and `/responses` contract. This local Python 3.12
-demo proves contract compatibility and the per-invocation Retrace architecture;
-it does not claim that this exact image has been deployed to Microsoft Foundry.
-
-## Honest AI Scope
-
-The model is real and the choice is genuinely sampled. The demo records the
-model's externally visible response and concise stated reason. It does not
-claim access to hidden private chain-of-thought.
+The parent exposes a small provider-neutral HTTP contract and launches one
+recorded worker per decision. The model is reached through a separate HTTP
+gateway. Either boundary can be replaced with another agent host or model
+provider without changing the worker's Retrace recording, offline replay, or
+DAP inspection flow.

@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 from scripts.demo_state import CASE
 
 
-def response_request() -> dict[str, Any]:
+def decision_request() -> dict[str, Any]:
     return {
         "input": CASE["user_prompt"],
         "metadata": {
@@ -18,16 +18,16 @@ def response_request() -> dict[str, Any]:
     }
 
 
-def post_response(url: str) -> tuple[int, dict[str, Any] | str]:
-    payload = json.dumps(response_request(), separators=(",", ":")).encode()
+def post_decision(url: str) -> tuple[int, dict[str, Any] | str]:
+    payload = json.dumps(decision_request(), separators=(",", ":")).encode()
     request = Request(
         url,
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "x-agent-foundry-call-id": "CALL-MODEL-DECISION-DEMO",
-            "x-agent-foundry-session-id": "SESSION-MODEL-DECISION-DEMO",
-            "x-agent-foundry-user-id": "USER-MODEL-DECISION-DEMO",
+            "x-request-id": "REQUEST-MODEL-DECISION-DEMO",
+            "x-session-id": "SESSION-MODEL-DECISION-DEMO",
+            "x-user-id": "USER-MODEL-DECISION-DEMO",
         },
         method="POST",
     )

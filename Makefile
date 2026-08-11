@@ -1,9 +1,12 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --file compose.yaml
 
-.PHONY: run model build prepare start stop clean demo test status logs shell vscode
+.PHONY: run preflight model build prepare start stop clean demo test status logs shell vscode
 
-run: model demo
+run: preflight model demo
+
+preflight:
+	python3 -m scripts.preflight
 
 model:
 	ollama pull qwen3:1.7b

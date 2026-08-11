@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
+
+import pytest
 
 from agent.invocation_runner import _worker_environment
 from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.demo_state import CASE
 from scripts.responses_client import response_request
+from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import dap_value_matches
 
 
@@ -43,6 +47,21 @@ def test_recorded_worker_environment_excludes_parent_secrets(tmp_path) -> None:
 def test_invocation_lock_is_not_part_of_worker_environment() -> None:
     event = asyncio.Event()
     assert not event.is_set()
+
+
+def test_docker_preflight_explains_an_unreachable_engine(monkeypatch) -> None:
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            returncode=1,
+            stdout="Cannot connect to the Docker daemon",
+        ),
+    )
+
+    with pytest.raises(DemoPreflightError, match="Start Docker Desktop"):
+        verify_docker()
 
 
 def test_dap_value_accepts_exact_and_repr_truncated_historical_strings() -> None:

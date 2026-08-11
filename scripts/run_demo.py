@@ -29,6 +29,10 @@ MAXIMUM_LIVE_INVOCATIONS = 20
 REPLAY_COUNT = 10
 
 
+class DemoPreflightError(RuntimeError):
+    pass
+
+
 def heading(title: str) -> None:
     print(f"\n{'=' * 78}\n{title}\n{'=' * 78}", flush=True)
 
@@ -50,8 +54,12 @@ def run(
     )
 
 
-def compose(*arguments: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
-    return run([*COMPOSE, *arguments], capture=capture)
+def compose(
+    *arguments: str,
+    capture: bool = False,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    return run([*COMPOSE, *arguments], capture=capture, check=check)
 
 
 def in_offline_container(
@@ -107,6 +115,32 @@ def verify_real_model() -> dict[str, Any]:
             f"expected {OLLAMA_MODEL_DIGEST!r}"
         )
     return model
+
+
+def verify_docker() -> None:
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+        )
+    except FileNotFoundError as error:
+        raise DemoPreflightError(
+            "Docker is not installed. Install Docker Desktop or Docker Engine "
+            "before running the demo."
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise DemoPreflightError(
+            "Docker did not become ready within 10 seconds. Start Docker Desktop, "
+            "wait until the engine reports that it is running, and try again."
+        ) from error
+    if result.returncode != 0:
+        raise DemoPreflightError(
+            "Docker is installed but its engine is not reachable. Start Docker "
+            "Desktop, wait until it reports that Docker is running, and try again."
+        )
 
 
 def manifest_paths() -> set[Path]:
@@ -386,8 +420,11 @@ def main() -> None:
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
+    docker_ready = False
     try:
-        heading("1. Verify the real model and pinned Python 3.12 environment")
+        heading("1. Verify Docker, the real model, and pinned Python 3.12")
+        verify_docker()
+        docker_ready = True
         model = verify_real_model()
         print(
             json.dumps(
@@ -480,8 +517,12 @@ def main() -> None:
         heading("6. Proof complete")
         print((GENERATED / "DEMO_RESULTS.md").read_text())
     finally:
-        compose("down", "--remove-orphans")
+        if docker_ready:
+            compose("down", "--remove-orphans", check=False)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except DemoPreflightError as error:
+        raise SystemExit(f"Demo preflight failed: {error}") from None

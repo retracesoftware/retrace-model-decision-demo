@@ -166,28 +166,29 @@ model and builds the Python 3.12 image, so it takes longer than later runs.
 
 `make run` performs the following checks in order:
 
-1. Pulls `qwen3:1.7b` through Ollama.
-2. Verifies the model digest expected by this reviewed demo.
-3. Builds the pinned Python 3.12.13 Linux/amd64 image.
-4. Starts Microsoft's `ResponsesAgentServerHost` on port `8088`.
-5. Starts the HTTP model gateway connected to the real Ollama model.
-6. Sends the exact same Responses request repeatedly.
-7. Runs every invocation in a separate short-lived `retracepython` worker.
-8. Creates one `.retrace` recording and manifest per live invocation.
-9. Continues until the model has produced at least two distinct application
+1. Verifies that the Docker engine is reachable before downloading anything.
+2. Pulls `qwen3:1.7b` through Ollama.
+3. Verifies the model digest expected by this reviewed demo.
+4. Builds the pinned Python 3.12.13 Linux/amd64 image.
+5. Starts Microsoft's `ResponsesAgentServerHost` on port `8088`.
+6. Starts the HTTP model gateway connected to the real Ollama model.
+7. Sends the exact same Responses request repeatedly.
+8. Runs every invocation in a separate short-lived `retracepython` worker.
+9. Creates one `.retrace` recording and manifest per live invocation.
+10. Continues until the model has produced at least two distinct application
    decisions, with a maximum of 20 live calls.
-10. Verifies every live model request has the same SHA-256 hash.
-11. Selects the first historical invocation.
-12. Stops the model gateway.
-13. Replays the selected recording ten times in ten fresh containers with
+11. Verifies every live model request has the same SHA-256 hash.
+12. Selects the first historical invocation.
+13. Stops the model gateway.
+14. Replays the selected recording ten times in ten fresh containers with
     `--network none`.
-14. Requires every complete replayed output to match the selected live output.
-15. Verifies the model-call counter did not increase during replay.
-16. Uses DAP to inspect stack, scopes, locals, the historical response, score,
+15. Requires every complete replayed output to match the selected live output.
+16. Verifies the model-call counter did not increase during replay.
+17. Uses DAP to inspect stack, scopes, locals, the historical response, score,
     reason, selected action, identifiers, and hashes.
-17. Exercises reverse and forward navigation around the decision function.
-18. Generates a VS Code workspace and a readable proof report.
-19. Stops and removes the temporary Compose services.
+18. Exercises reverse and forward navigation around the decision function.
+19. Generates a VS Code workspace and a readable proof report.
+20. Stops and removes the temporary Compose services.
 
 The demo intentionally fails instead of manufacturing variety if the real
 model does not produce two valid decisions within 20 identical live calls.
@@ -504,6 +505,22 @@ Then verify its API:
 
 ```bash
 curl http://127.0.0.1:11434/api/tags
+```
+
+### Docker is not reachable
+
+Start Docker Desktop or Docker Engine and wait until it reports that the
+engine is running. Confirm it from the terminal:
+
+```bash
+docker info
+```
+
+Then run `make run` again. If the model was already downloaded successfully,
+you may resume without pulling it again:
+
+```bash
+make demo
 ```
 
 ### The model is missing

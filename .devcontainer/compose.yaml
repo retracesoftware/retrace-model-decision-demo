@@ -1,0 +1,15 @@
+services:
+  workspace:
+    image: retrace-model-decision-demo:py312
+    platform: linux/amd64
+    working_dir: /app
+    init: true
+    command: ["sleep", "infinity"]
+    environment:
+      DEMO_ROOT: /app
+      DEMO_GENERATED_ROOT: /app/generated
+      PYTHONPATH: /app
+    volumes:
+      - .:/app:cached
+    mem_limit: 1g
+    cpus: 1

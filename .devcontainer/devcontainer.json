@@ -1,0 +1,32 @@
+{
+  "name": "Retrace Model Decision Demo",
+  "dockerComposeFile": [
+    "../compose.yaml",
+    "compose.yaml"
+  ],
+  "service": "workspace",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+  "postCreateCommand": "python -m scripts.prepare_vscode",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "3gb",
+    "storage": "3gb"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "RetraceSoftware.retrace-debug-extension",
+        "ms-python.python"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "remote.extensionKind": {
+          "RetraceSoftware.retrace-debug-extension": [
+            "workspace"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "/usr/local/bin/python",
+  "files.exclude": {
+    "generated/homes": true
+  }
+}
+

@@ -1,0 +1,11 @@
+{
+  "case_id": "CASE-MODEL-NONDETERMINISM-001",
+  "created_at": "2026-08-11T13:05:44.085743Z",
+  "decision": "escalate_specialist",
+  "gateway_response_id": "MODEL-37E9AC743286",
+  "model": "qwen3:1.7b",
+  "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
+  "model_response_sha256": "0d60257ea13f6edd2e9eb166d38cd028600b1f185733aecaf0cf0cc821d1e91c",
+  "reason": "The refund request is eligible based on the photo evidence of packaging damage and the lack of safety-criticality. The requester has valid account history and no prior refunds. The exclusion of serial number obscuration does not affect refund eligibility.",
+  "review_score": 85
+}

@@ -1,0 +1,67 @@
+name: retrace-model-decision-demo
+
+x-demo-service: &demo-service
+  image: retrace-model-decision-demo:py312
+  platform: linux/amd64
+  working_dir: /app
+  init: true
+  environment: &demo-environment
+    DEMO_ROOT: /app
+    DEMO_GENERATED_ROOT: /app/generated
+    PYTHONPATH: /app
+  volumes:
+    - .:/app:cached
+  mem_limit: 1g
+  cpus: 1
+  networks:
+    - demo
+
+services:
+  agent:
+    <<: *demo-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "agent.main"]
+    environment:
+      <<: *demo-environment
+      MODEL_GATEWAY_URL: http://model-gateway:8091
+      FOUNDRY_AGENT_ID: demo-agent-model-decision
+      FOUNDRY_AGENT_NAME: retrace-model-decision-recorder
+      FOUNDRY_AGENT_VERSION: 0.1.0
+      DEMO_PARENT_SECRET: RETRACE_PARENT_SECRET_MUST_NOT_ENTER_RECORDING
+    ports:
+      - "127.0.0.1:8088:8088"
+    depends_on:
+      model-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8088/readiness"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  model-gateway:
+    <<: *demo-service
+    command: ["python", "-m", "external_world.model_gateway"]
+    environment:
+      <<: *demo-environment
+      PORT: "8091"
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen3:1.7b
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8091/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+networks:
+  demo:
+    driver: bridge
+

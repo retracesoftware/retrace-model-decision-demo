@@ -1,0 +1,6 @@
+azure-ai-agentserver-core==2.0.0
+azure-ai-agentserver-responses==2.0.0b1
+pytest==8.4.2
+retracesoftware==0.2.25
+ruff==0.12.12
+

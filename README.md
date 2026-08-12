@@ -332,6 +332,8 @@ container at `/app`.
 The Dev Container automatically:
 
 - installs the Retrace Debug Extension in the remote extension host
+- selects `/app/generated/recordings/selected-decision.retrace` in the Retrace
+  sidebar
 - copies the reviewed recording if no fresh recording exists
 - extracts the selected recording
 - generates its `.code-workspace`
@@ -355,6 +357,9 @@ dap=pass model_response=historical decision=historical reason=historical stack=p
 ```
 
 This is the same DAP protocol used by the VS Code extension.
+
+You can run the same check from the Command Palette with **Tasks: Run Task**,
+then select **Retrace: verify selected model decision**.
 
 ### 4. Set the source breakpoint
 

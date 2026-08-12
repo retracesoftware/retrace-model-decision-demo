@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -11,6 +13,11 @@ from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
 from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import dap_value_matches
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RETRACE_EXTENSION_ID = "RetraceSoftware.retrace-debug-extension"
+SELECTED_RECORDING = "/app/generated/recordings/selected-decision.retrace"
 
 
 def test_sampling_is_nondeterministic_by_configuration() -> None:
@@ -30,6 +37,21 @@ def test_agent_request_is_identical_across_live_invocations() -> None:
     second = decision_request()
     assert first == second
     assert first["input"] == CASE["user_prompt"]
+
+
+def test_devcontainer_uses_current_retrace_extension_and_selected_recording() -> None:
+    devcontainer = json.loads(
+        (ROOT / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    vscode = devcontainer["customizations"]["vscode"]
+    assert RETRACE_EXTENSION_ID in vscode["extensions"]
+    assert vscode["settings"]["remote.extensionKind"][RETRACE_EXTENSION_ID] == [
+        "workspace"
+    ]
+
+    workspace_settings = json.loads((ROOT / ".vscode" / "settings.json").read_text())
+    assert workspace_settings["retrace.recording"] == SELECTED_RECORDING
+    assert workspace_settings["terminal.integrated.cwd"] == "/app"
 
 
 def test_recorded_worker_environment_excludes_parent_secrets(tmp_path) -> None:

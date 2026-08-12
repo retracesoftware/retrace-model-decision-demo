@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Retrace: run model-decision proof",
+      "label": "Retrace: verify selected model decision",
       "type": "shell",
-      "command": "make demo",
+      "command": "python /app/scripts/verify_dap.py --recording /app/generated/recordings/selected-decision.retrace --expected /app/generated/recordings/selected-decision.expected.json --transcript /app/generated/transcripts/vscode-task-dap.json",
       "problemMatcher": []
     },
     {
@@ -15,4 +15,3 @@
     }
   ]
 }
-

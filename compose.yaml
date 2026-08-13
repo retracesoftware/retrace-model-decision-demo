@@ -3,11 +3,13 @@ name: retrace-model-decision-demo
 x-demo-service: &demo-service
   image: retrace-model-decision-demo:py312
   platform: linux/amd64
+  user: "${DEMO_UID:-0}:${DEMO_GID:-0}"
   working_dir: /app
   init: true
   environment: &demo-environment
     DEMO_ROOT: /app
     DEMO_GENERATED_ROOT: /app/generated
+    HOME: /tmp/retrace-demo-home
     PYTHONPATH: /app
   volumes:
     - .:/app:cached

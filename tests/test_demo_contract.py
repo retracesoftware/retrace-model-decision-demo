@@ -117,6 +117,13 @@ def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> N
     assert workspace_settings["terminal.integrated.cwd"] == "/app"
 
 
+def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
+    compose = (ROOT / "compose.yaml").read_text()
+
+    assert 'user: "${DEMO_UID:-0}:${DEMO_GID:-0}"' in compose
+    assert "HOME: /tmp/retrace-demo-home" in compose
+
+
 def test_reviewed_presentation_artifact_is_complete() -> None:
     artifacts = ROOT / "example-artifacts"
     recording = artifacts / "selected-failure.retrace"

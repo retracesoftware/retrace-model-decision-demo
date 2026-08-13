@@ -24,7 +24,8 @@ jobs:
 
       - name: Verify the bundled recording through DAP
         run: |
-          docker compose --file compose.yaml run --rm --no-deps agent \
+          DEMO_UID=$(id -u) DEMO_GID=$(id -g) \
+            docker compose --file compose.yaml run --rm --no-deps agent \
             python -m scripts.prepare_vscode
 
       - name: Verify the reviewed presentation workflow offline

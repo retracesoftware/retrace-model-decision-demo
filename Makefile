@@ -1,5 +1,9 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --file compose.yaml
+DEMO_UID ?= $(shell id -u)
+DEMO_GID ?= $(shell id -g)
+export DEMO_UID
+export DEMO_GID
 
 .PHONY: run presentation preflight model build prepare start stop clean demo test status logs shell vscode
 

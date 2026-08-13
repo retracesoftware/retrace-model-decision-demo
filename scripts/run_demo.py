@@ -28,6 +28,10 @@ OLLAMA_MODEL_DIGEST = os.environ.get(
 MINIMUM_DISTINCT_DECISIONS = 2
 MAXIMUM_LIVE_INVOCATIONS = 20
 REPLAY_COUNT = 10
+HOST_UID = str(os.getuid()) if hasattr(os, "getuid") else "0"
+HOST_GID = str(os.getgid()) if hasattr(os, "getgid") else "0"
+os.environ.setdefault("DEMO_UID", HOST_UID)
+os.environ.setdefault("DEMO_GID", HOST_GID)
 DECISION_FIELDS = (
     "case_id",
     "review_score",
@@ -92,6 +96,10 @@ def in_offline_container(
             "768m",
             "--cpus",
             "1",
+            "--user",
+            f"{HOST_UID}:{HOST_GID}",
+            "--env",
+            "HOME=/tmp/retrace-demo-home",
             "--volume",
             f"{ROOT}:/app",
             "--workdir",

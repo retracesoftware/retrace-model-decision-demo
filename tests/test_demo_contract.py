@@ -7,7 +7,12 @@ import subprocess
 
 import pytest
 
-from agent.invocation_runner import _worker_environment
+from agent.invocation_runner import (
+    InvocationResult,
+    _event,
+    _worker_environment,
+    _worker_events,
+)
 from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
@@ -17,7 +22,7 @@ from scripts.verify_dap import dap_value_matches
 
 ROOT = Path(__file__).resolve().parents[1]
 RETRACE_EXTENSION_ID = "RetraceSoftware.retrace-debug-extension"
-SELECTED_RECORDING = "/app/generated/recordings/selected-decision.retrace"
+SELECTED_RECORDING = "/app/generated/recordings/selected-failure.retrace"
 
 
 def test_sampling_is_nondeterministic_by_configuration() -> None:
@@ -37,9 +42,67 @@ def test_agent_request_is_identical_across_live_invocations() -> None:
     second = decision_request()
     assert first == second
     assert first["input"] == CASE["user_prompt"]
+    assert CASE["serial_number"] is None
 
 
-def test_devcontainer_uses_current_retrace_extension_and_selected_recording() -> None:
+def test_worker_events_preserve_decision_before_natural_failure() -> None:
+    stdout = "\n".join(
+        [
+            '{"event":"model_decision_selected","decision":"request_more_information"}',
+            '{"event":"application_failure","exception_type":"AttributeError"}',
+        ]
+    )
+    events = _worker_events(stdout)
+
+    assert _event(events, "model_decision_selected")["decision"] == (
+        "request_more_information"
+    )
+    assert _event(events, "application_failure")["exception_type"] == ("AttributeError")
+
+
+def test_failed_recorded_invocation_remains_a_first_class_result(tmp_path) -> None:
+    result = InvocationResult(
+        recording_id="decision-test",
+        worker_exit_code=1,
+        decision={"decision": "request_more_information"},
+        output=None,
+        failure={
+            "exception_type": "AttributeError",
+            "exception_message": "'NoneType' object has no attribute 'strip'",
+        },
+        manifest_path=tmp_path / "manifest.json",
+        recording_path=tmp_path / "recording.retrace",
+    )
+
+    assert not result.succeeded
+    assert result.failure["exception_type"] == "AttributeError"
+
+
+def test_protocol_response_distinguishes_invocation_and_recording_ids(
+    tmp_path,
+) -> None:
+    pytest.importorskip("azure.ai.agentserver.invocations")
+    from agent.main import _response_payload
+
+    result = InvocationResult(
+        recording_id="decision-test",
+        worker_exit_code=1,
+        decision={"decision": "request_more_information"},
+        output=None,
+        failure={
+            "exception_type": "AttributeError",
+            "exception_message": "'NoneType' object has no attribute 'strip'",
+        },
+        manifest_path=tmp_path / "manifest.json",
+        recording_path=tmp_path / "recording.retrace",
+    )
+    payload = _response_payload(result, platform_invocation_id="INVOCATION-TEST")
+
+    assert payload["invocation_id"] == "INVOCATION-TEST"
+    assert payload["recording_id"] == "decision-test"
+
+
+def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> None:
     devcontainer = json.loads(
         (ROOT / ".devcontainer" / "devcontainer.json").read_text()
     )
@@ -52,6 +115,54 @@ def test_devcontainer_uses_current_retrace_extension_and_selected_recording() ->
     workspace_settings = json.loads((ROOT / ".vscode" / "settings.json").read_text())
     assert workspace_settings["retrace.recording"] == SELECTED_RECORDING
     assert workspace_settings["terminal.integrated.cwd"] == "/app"
+
+
+def test_reviewed_presentation_artifact_is_complete() -> None:
+    artifacts = ROOT / "example-artifacts"
+    recording = artifacts / "selected-failure.retrace"
+    expected = json.loads((artifacts / "selected-failure.expected.json").read_text())
+
+    assert recording.stat().st_size > 10_000
+    assert expected["decision"]["decision"] == "request_more_information"
+    assert 65 <= expected["decision"]["review_score"] < 70
+    assert expected["failure"] == {
+        "exception_type": "AttributeError",
+        "exception_message": "'NoneType' object has no attribute 'strip'",
+    }
+    assert expected["runtime_input"]["serial_number"] is None
+
+
+def test_agent_uses_microsoft_invocation_contract() -> None:
+    source = (ROOT / "agent" / "main.py").read_text()
+
+    assert "InvocationAgentServerHost" in source
+    assert "@app.invoke_handler" in source
+    assert "retrace.recording.id" in source
+    assert "/decisions" not in source
+
+
+def test_otel_collector_decodes_exported_invocation_span() -> None:
+    trace_service = pytest.importorskip(
+        "opentelemetry.proto.collector.trace.v1.trace_service_pb2"
+    )
+    from external_world.otel_collector import decode_spans
+
+    ExportTraceServiceRequest = trace_service.ExportTraceServiceRequest
+    request = ExportTraceServiceRequest()
+    resource_spans = request.resource_spans.add()
+    scope_spans = resource_spans.scope_spans.add()
+    span = scope_spans.spans.add()
+    span.trace_id = b"t" * 16
+    span.span_id = b"s" * 8
+    span.name = "invoke_agent retrace-model-decision-demo:1.0"
+    attribute = span.attributes.add()
+    attribute.key = "retrace.recording.id"
+    attribute.value.string_value = "decision-test"
+
+    decoded = decode_spans(request.SerializeToString())
+
+    assert decoded[0]["attributes"]["retrace.recording.id"] == "decision-test"
+    assert decoded[0]["trace_id"] == (b"t" * 16).hex()
 
 
 def test_recorded_worker_environment_excludes_parent_secrets(tmp_path) -> None:

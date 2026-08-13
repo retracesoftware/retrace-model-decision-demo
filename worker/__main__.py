@@ -11,8 +11,29 @@ def main() -> None:
     parser.add_argument("--request-json", required=True)
     args = parser.parse_args()
     request = json.loads(args.request_json)
-    result = run_decision_agent(request)
-    print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    try:
+        result = run_decision_agent(request)
+    except Exception as error:
+        print(
+            json.dumps(
+                {
+                    "event": "application_failure",
+                    "exception_type": type(error).__name__,
+                    "exception_message": str(error),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            flush=True,
+        )
+        raise
+    print(
+        json.dumps(
+            {"event": "invocation_completed", "output": result},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 if __name__ == "__main__":

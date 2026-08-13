@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/model-failure-foundry-demo]
   pull_request:
 
 permissions:
@@ -26,6 +26,9 @@ jobs:
         run: |
           docker compose --file compose.yaml run --rm --no-deps agent \
             python -m scripts.prepare_vscode
+
+      - name: Verify the reviewed presentation workflow offline
+        run: make presentation
 
       - name: Remove demo containers
         if: ${{ always() && hashFiles('compose.yaml') != '' }}

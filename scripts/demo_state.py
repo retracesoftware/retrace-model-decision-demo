@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "generated"
 CASE = {
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "serial_number": None,
     "user_prompt": (
         "Alice requests a GBP 125 refund for a damaged medical-device accessory. "
         "It is day 31 of a 30-day self-service window. A photo supports packaging "
@@ -43,10 +44,22 @@ def reset_generated() -> None:
         "recordings",
         "replay",
         "requests",
-        "decisions",
+        "invocations",
         "transcripts",
+        "telemetry",
     ):
         (GENERATED / name).mkdir(parents=True, exist_ok=True)
     (GENERATED / "requests" / "identical-request.json").write_text(
-        json.dumps(CASE, indent=2, sort_keys=True) + "\n"
+        json.dumps(
+            {
+                "input": CASE["user_prompt"],
+                "metadata": {
+                    "demo_case_id": CASE["case_id"],
+                    "purpose": "retrace-nondeterministic-model-decision",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
     )

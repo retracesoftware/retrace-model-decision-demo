@@ -9,10 +9,10 @@ from scripts.demo_state import GENERATED, ROOT
 from scripts.verify_dap import marker_line, verify
 
 
-ACTIVE = GENERATED / "recordings" / "selected-decision.retrace"
-EXPECTED = GENERATED / "recordings" / "selected-decision.expected.json"
-FALLBACK = ROOT / "example-artifacts" / "selected-decision.retrace"
-FALLBACK_EXPECTED = ROOT / "example-artifacts" / "selected-decision.expected.json"
+ACTIVE = GENERATED / "recordings" / "selected-failure.retrace"
+EXPECTED = GENERATED / "recordings" / "selected-failure.expected.json"
+FALLBACK = ROOT / "example-artifacts" / "selected-failure.retrace"
+FALLBACK_EXPECTED = ROOT / "example-artifacts" / "selected-failure.expected.json"
 
 
 def prepare() -> Path | None:
@@ -22,7 +22,8 @@ def prepare() -> Path | None:
         shutil.copy2(FALLBACK_EXPECTED, EXPECTED)
     if not ACTIVE.is_file():
         print(
-            "No selected recording yet. Run `make demo` on the host, then reopen the folder in the Dev Container."
+            "No selected failure recording yet. Run `make demo` on the host, "
+            "then reopen the folder in the Dev Container."
         )
         return None
     if not EXPECTED.is_file():

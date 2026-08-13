@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Retrace: verify selected model decision",
+      "label": "Retrace: verify selected model failure",
       "type": "shell",
-      "command": "python /app/scripts/verify_dap.py --recording /app/generated/recordings/selected-decision.retrace --expected /app/generated/recordings/selected-decision.expected.json --transcript /app/generated/transcripts/vscode-task-dap.json",
+      "command": "python /app/scripts/verify_dap.py --recording /app/generated/recordings/selected-failure.retrace --expected /app/generated/recordings/selected-failure.expected.json --transcript /app/generated/transcripts/vscode-task-dap.json",
       "problemMatcher": []
     },
     {

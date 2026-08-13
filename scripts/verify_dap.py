@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 ROOT = Path("/app")
 SOURCE = ROOT / "worker" / "decision_agent.py"
-MARKER = "RETRACE_MODEL_DECISION_BREAKPOINT"
+MARKER = "RETRACE_MODEL_FAILURE_BREAKPOINT"
 
 
 def dap_value_matches(expected: str, rendered: str) -> bool:
@@ -247,14 +247,16 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
         )
         variables = client.response("variables").get("body", {}).get("variables", [])
         values = {str(item.get("name")): str(item.get("value")) for item in variables}
+        decision = expected["decision"]
         expected_values = {
-            "review_score": str(expected["review_score"]),
-            "decision_name": str(expected["decision"]),
-            "decision_reason": str(expected["reason"]),
-            "model_name": str(expected["model"]),
-            "gateway_response_id": str(expected["gateway_response_id"]),
-            "model_request_sha256": str(expected["model_request_sha256"]),
-            "model_response_sha256": str(expected["model_response_sha256"]),
+            "review_score": str(decision["review_score"]),
+            "decision_name": str(decision["decision"]),
+            "decision_reason": str(decision["reason"]),
+            "model_name": str(decision["model"]),
+            "gateway_response_id": str(decision["gateway_response_id"]),
+            "model_request_sha256": str(decision["model_request_sha256"]),
+            "model_response_sha256": str(decision["model_response_sha256"]),
+            "serial_number": "None",
         }
         for name, value in expected_values.items():
             if not dap_value_matches(value, values.get(name, "")):
@@ -263,7 +265,7 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
                 )
         raw_response = values.get("raw_model_response", "")
         for value in (
-            str(expected["gateway_response_id"]),
+            str(decision["gateway_response_id"]),
             "message",
         ):
             if value not in raw_response:
@@ -283,13 +285,16 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
         if int(reverse_top.get("line", 0)) == line:
             raise AssertionError("Step Back did not move the historical cursor")
 
-        returned = continue_to_marker(client, line=line)[0]
-        if (
-            returned.get("source", {}).get("path") != str(SOURCE)
-            or int(returned.get("line", 0)) != line
-        ):
+        returned_frames = continue_to_marker(client, line=line)
+        returned = next(
+            item
+            for item in returned_frames
+            if item.get("source", {}).get("path") == str(SOURCE)
+            and int(item.get("line", 0)) == line
+        )
+        if int(returned.get("line", 0)) != line:
             raise AssertionError(
-                f"forward replay did not return to decision: {returned}"
+                f"forward replay did not return to failure: {returned}"
             )
     finally:
         transcript.parent.mkdir(parents=True, exist_ok=True)
@@ -297,8 +302,9 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
         client.close()
 
     print(
-        "dap=pass model_response=historical decision=historical reason=historical "
-        "stack=pass scopes=pass locals=pass step_back=in-frame forward_return=pass"
+        "dap=pass failure=historical model_response=historical "
+        "decision=historical serial_number=None stack=pass scopes=pass "
+        "locals=pass step_back=toward-routing forward_return=failure"
     )
 
 

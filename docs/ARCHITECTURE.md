@@ -1,105 +1,173 @@
 # Architecture
 
-## Proof Claim
+## Claim
 
-The demo proves one narrow, strong claim:
+This demo proves:
 
-> A real external model can make different decisions for identical live input,
-> while Retrace preserves any selected historical invocation so its exact model
-> response and downstream decision can be replayed and debugged later without
-> the model.
+> A real model response can select a Python path that fails only for one
+> historical invocation. Platform telemetry identifies that invocation;
+> Retrace preserves and re-enters its execution for deterministic offline
+> replay and source-level debugging.
 
-The live variation and replay determinism are measured separately. The demo
-does not use a clock, counter, shuffled prompt, hardcoded response, application
-RNG, or replay-only fixture to create the differing decisions.
-
-## Runtime Shape
+The demo does not claim that OpenTelemetry is unable to retain prompts,
+responses, or tool data. The two systems answer different questions:
 
 ```text
-Host VS Code / operator
-        |
-        | identical POST /decisions
-        v
-provider-neutral agent API (not recorded)
-        |
-        | one sanitized subprocess per invocation
-        v
-retracepython worker (recorded, Python 3.12)
-        |
-        | identical HTTP model request
-        v
-model gateway (not recorded) -> real local Qwen through Ollama
-        |
-        | structured review score + visible reason
-        v
-worker validates and returns the decision
+Microsoft Hosted Agent telemetry
+  Which invocation failed?
+  What spans, model calls, and status were observed?
+
+Retrace
+  What did this Python execution do with those values?
+  What were its stack, scopes, locals, and control flow?
+  Can the same execution be replayed after the model changes or disappears?
 ```
 
-Every worker invocation creates a separate `.retrace` file and manifest. The
-parent is deliberately outside recording because it owns the long-lived async
-server lifecycle and platform context. Only a small environment allowlist is
-passed into the recorded worker, so parent credentials cannot accidentally
-enter the recording.
-
-## Why A Discretionary Score
-
-The model returns a structured `review_score` from 0 to 100 and one concise
-reason. A small deterministic policy maps it to one of three actions:
-
-- `approve_refund`
-- `request_more_information`
-- `escalate_specialist`
-
-Scores below 65 approve, scores from 65 through 69 request more information,
-and scores of 70 or more escalate. This is a material decision, not free-text
-wording variation. The model request uses positive temperature and omits
-`seed`; every request hash is checked for equality.
-
-Enum-constrained actions and native tool selection were both rejected during
-design because the tested small model usually collapsed to one action. A
-structured discretionary score remained valid across the probe set while
-varying enough to drive materially different, policy-controlled actions. The
-application still strictly validates the score, fields and rationale.
-
-## Record And Replay Boundary
-
-The worker reaches the gateway through Python's HTTP/socket path. Retrace
-records the external socket behavior during the live run. During replay, the
-same Python code runs, but the historical external result is supplied from the
-recording. The gateway is stopped and each proof replay is launched in a fresh
-Docker container with `--network none`.
-
-The proof requires all ten replays to match the selected live output exactly,
-including:
-
-- chosen decision
-- review score
-- visible reason
-- model name and provider timestamp
-- gateway response ID
-- model request and response hashes
-
-The model-gateway call counter must remain unchanged across replay.
-
-## Debugger Path
-
-The generated recording is extracted and served through `retracesoftware-dap`.
-The verifier uses the same DAP protocol as VS Code:
+## Runtime
 
 ```text
-initialize -> launch -> setBreakpoints -> configurationDone -> continue
--> stackTrace -> scopes -> variables -> stepBack -> continue
+operator
+  |
+  | POST /invocations
+  v
+Microsoft InvocationAgentServerHost                 not recorded
+  |  invocation ID, session ID, OTel span
+  |  span attribute: retrace.recording.id
+  |
+  | launches one sanitized subprocess
+  v
+retracepython -m worker                             recorded
+  |
+  | identical HTTP model request
+  v
+model gateway -> real sampled qwen3:1.7b            external boundary
+  |
+  | strict JSON: review_score + reason
+  v
+ordinary Python parsing and routing
+  |
+  +-- score <65  approve_refund                    succeeds
+  +-- score 65-69 request_more_information         None.strip() fails
+  +-- score >=70 escalate_specialist               succeeds
 ```
 
-At `RETRACE_MODEL_DECISION_BREAKPOINT`, DAP must expose the original
-`raw_model_response`, review score, resulting decision, rationale, provider
-metadata and hashes. Reverse navigation is claimed only within the active
-Python function.
+The Microsoft host is deliberately outside Retrace. It owns long-lived server
+lifecycle, concurrency, request identity, observability, and any platform
+credentials. A short-lived provider-neutral worker contains only one finite
+application invocation. That worker receives an environment allowlist, so
+parent secrets do not enter the trace.
 
-## Portability
+## Failure Design
 
-The parent exposes a small provider-neutral HTTP contract and launches one
-recorded worker per decision. The model is reached through a separate HTTP
-gateway. Either boundary can be replaced with another agent host or model
-provider without changing the worker's Retrace recording, offline replay, or
-DAP inspection flow.
+`serial_number=None` is a stable application input. It does not itself force a
+failure. The model's genuine sampled score determines whether Python executes
+the route that needs that field.
+
+This distinction matters:
+
+```text
+same input + score 60 -> approve route -> success
+same input + score 65 -> more-information route -> AttributeError
+same input + score 75 -> escalation route -> success
+```
+
+The failure is therefore model-dependent without asking the model to fail.
+The bug is ordinary Python in an application branch, not an injected test
+exception and not a hardcoded model response.
+
+## Recording Contract
+
+Every invocation creates:
+
+- one `.retrace` recording,
+- one manifest,
+- stdout and stderr logs,
+- a structured `model_decision_selected` event before branch execution, and
+- either `invocation_completed` or `application_failure`.
+
+The structured decision event identifies which failed recording to select and
+provides stable verification metadata. It intentionally does not reveal the
+bad serial-number value; that value is discovered from historical DAP locals.
+
+The manifest persists failed application invocations as first-class outcomes.
+Infrastructure failures still raise at the parent boundary, while a worker
+`AttributeError` returns HTTP 500 with a recording ID and preserved failure
+metadata.
+
+## Replay Contract
+
+The failed recording is extracted after the model gateway is stopped. Each
+replay runs in a new container with:
+
+```text
+--network none
+--memory 768m
+--cpus 1
+```
+
+Every replay must match:
+
+- model request hash,
+- historical response hash and ID,
+- score and reason,
+- selected route,
+- exception type and message,
+- failing traceback line, and
+- process exit code.
+
+The model-gateway counter must not change. Replay is not a cached final answer:
+the same Python code runs again and Retrace supplies recorded external behavior
+at the model HTTP boundary.
+
+## Telemetry Correlation
+
+The Microsoft adapter establishes the invocation identifiers and propagated
+OpenTelemetry request context. Inside that context, the handler creates the
+application invocation span and annotates it with:
+
+```text
+retrace.recording.id
+retrace.recording.available
+retrace.worker.exit_code
+retrace.model.decision
+retrace.application.exception.type
+```
+
+The local OTLP collector decodes exported protobuf spans to
+`generated/telemetry/spans.jsonl`. The proof requires an ERROR span whose
+recording ID matches the failed manifest. This is executable evidence that the
+platform invocation and Retrace artifact are correlated.
+
+## Debugger Contract
+
+DAP uses the failed recording and stops on:
+
+```python
+normalized = serial_number.strip()  # RETRACE_MODEL_FAILURE_BREAKPOINT
+```
+
+The verifier requires historical values for:
+
+- `raw_model_response`,
+- `review_score`,
+- `decision_reason`,
+- `decision_name`,
+- model name, response ID, and hashes,
+- `serial_number=None`, and
+- the application stack.
+
+It then issues Step Back, verifies movement within the decision function, and
+continues forward to the same failure breakpoint. VS Code uses the same DAP
+protocol and the same replay binary.
+
+## Proof Versus Presentation
+
+`make run` is the complete stochastic proof. It makes fresh real-model calls
+and must discover both a successful route and the rare failed route.
+
+`make presentation` uses a reviewed genuine failed artifact captured by that
+proof. It is deterministic and does not require the model. It still validates
+the artifact through offline replay and DAP before the visual walkthrough.
+
+This separation avoids making a stage demo depend on a narrow random score
+band while preserving the authenticity of the recording.

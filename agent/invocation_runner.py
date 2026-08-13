@@ -22,9 +22,16 @@ GENERATED = Path(os.environ.get("DEMO_GENERATED_ROOT", ROOT / "generated"))
 @dataclass(frozen=True)
 class InvocationResult:
     recording_id: str
-    output: dict[str, Any]
+    worker_exit_code: int
+    decision: dict[str, Any]
+    output: dict[str, Any] | None
+    failure: dict[str, Any] | None
     manifest_path: Path
     recording_path: Path
+
+    @property
+    def succeeded(self) -> bool:
+        return self.worker_exit_code == 0
 
 
 def _worker_environment(*, invocation_home: Path, recording_id: str) -> dict[str, str]:
@@ -49,6 +56,25 @@ def _source_hash() -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _worker_events(stdout: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("event"), str):
+            events.append(payload)
+    return events
+
+
+def _event(events: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    matches = [item for item in events if item.get("event") == name]
+    if len(matches) > 1:
+        raise RuntimeError(f"worker emitted duplicate {name!r} events")
+    return matches[0] if matches else None
 
 
 async def run_recorded_invocation(
@@ -111,10 +137,13 @@ async def run_recorded_invocation(
     worker_exit_code = int(process.returncode or 0)
     recording_available = recording_path.is_file() and recording_path.stat().st_size > 0
 
-    output_lines = [line for line in stdout.splitlines() if line.strip()]
-    output = json.loads(output_lines[-1]) if output_lines else None
+    events = _worker_events(stdout)
+    decision = _event(events, "model_decision_selected")
+    completed = _event(events, "invocation_completed")
+    failure = _event(events, "application_failure")
+    output = completed.get("output") if completed else None
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "recording_id": recording_id,
         "recording_path": str(recording_path),
         "recording_sha256": (
@@ -134,22 +163,30 @@ async def run_recorded_invocation(
         "retracesoftware_dap_version": version("retracesoftware-dap"),
         "stdout_path": str(stdout_path),
         "stderr_path": str(stderr_path),
+        "decision": decision,
         "output": output,
+        "failure": failure,
     }
     write_manifest(manifest_path, manifest)
 
-    if worker_exit_code:
-        raise RuntimeError(
-            f"recorded model invocation failed: {recording_id}; stderr={stderr_path}"
-        )
     if not recording_available:
-        raise RuntimeError(f"worker succeeded without recording: {recording_path}")
-    if not isinstance(output, dict):
-        raise RuntimeError(f"worker returned no JSON output: {stdout_path}")
+        raise RuntimeError(f"worker exited without recording: {recording_path}")
+    if not isinstance(decision, dict):
+        raise RuntimeError(f"worker emitted no model decision event: {stdout_path}")
+    if worker_exit_code == 0:
+        if not isinstance(output, dict) or failure is not None:
+            raise RuntimeError(
+                f"successful worker emitted invalid events: {stdout_path}"
+            )
+    elif not isinstance(failure, dict) or output is not None:
+        raise RuntimeError(f"failed worker emitted invalid events: {stdout_path}")
 
     return InvocationResult(
         recording_id=recording_id,
+        worker_exit_code=worker_exit_code,
+        decision=decision,
         output=output,
+        failure=failure,
         manifest_path=manifest_path,
         recording_path=recording_path,
     )

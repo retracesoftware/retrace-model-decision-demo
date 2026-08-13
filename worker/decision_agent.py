@@ -88,7 +88,7 @@ def run_decision_agent(request: dict[str, Any]) -> dict[str, Any]:
     model_response_sha256 = hashlib.sha256(
         canonical_json(raw_model_response["message"]).encode()
     ).hexdigest()
-    decision_evidence = {  # RETRACE_MODEL_DECISION_BREAKPOINT
+    decision_evidence = {
         "review_score": review_score,
         "decision": decision_name,
         "reason": decision_reason,
@@ -98,4 +98,28 @@ def run_decision_agent(request: dict[str, Any]) -> dict[str, Any]:
         "model_request_sha256": model_request_sha256,
         "model_response_sha256": model_response_sha256,
     }
-    return {"case_id": request["case_id"], **decision_evidence}
+    print(
+        canonical_json(
+            {
+                "event": "model_decision_selected",
+                "case_id": request["case_id"],
+                **decision_evidence,
+            }
+        ),
+        flush=True,
+    )
+
+    if decision_name == "approve_refund":  # RETRACE_MODEL_ROUTE_BREAKPOINT
+        action_detail = "refund approved from the available evidence"
+    elif decision_name == "request_more_information":
+        serial_number = request["serial_number"]
+        normalized = serial_number.strip()  # RETRACE_MODEL_FAILURE_BREAKPOINT
+        action_detail = f"request a clearer image of {normalized}"
+    else:
+        action_detail = "send the case to a regulated-equipment specialist"
+
+    return {
+        "case_id": request["case_id"],
+        **decision_evidence,
+        "action_detail": action_detail,
+    }

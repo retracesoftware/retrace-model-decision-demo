@@ -1,6 +1,6 @@
 {
   "python.defaultInterpreterPath": "/usr/local/bin/python",
-  "retrace.recording": "/app/generated/recordings/selected-decision.retrace",
+  "retrace.recording": "/app/generated/recordings/selected-failure.retrace",
   "terminal.integrated.cwd": "/app",
   "files.exclude": {
     "generated/homes": true

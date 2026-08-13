@@ -27,10 +27,17 @@ services:
       <<: *demo-environment
       MODEL_GATEWAY_URL: http://model-gateway:8091
       DEMO_PARENT_SECRET: RETRACE_PARENT_SECRET_MUST_NOT_ENTER_RECORDING
+      FOUNDRY_AGENT_NAME: retrace-model-decision-demo
+      FOUNDRY_AGENT_VERSION: "1.0"
+      OTEL_SDK_DISABLED: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://telemetry-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     ports:
       - "127.0.0.1:8088:8088"
     depends_on:
       model-gateway:
+        condition: service_healthy
+      telemetry-collector:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8088/readiness"]
@@ -57,6 +64,22 @@ services:
       timeout: 2s
       retries: 60
       start_period: 5s
+
+  telemetry-collector:
+    <<: *demo-service
+    command: ["python", "-m", "external_world.otel_collector"]
+    environment:
+      <<: *demo-environment
+      PORT: "4318"
+      OTEL_OUTPUT: /app/generated/telemetry/spans.jsonl
+    mem_limit: 128m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:4318/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
 
 networks:
   demo:

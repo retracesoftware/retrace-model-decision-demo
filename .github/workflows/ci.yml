@@ -77,9 +77,15 @@ jobs:
         run: docker compose --file compose.yaml down --remove-orphans --volumes
 
   live-model-stress:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live_model_runs != '0' }}
+    if: >-
+      ${{
+        (github.event_name == 'workflow_dispatch' && inputs.live_model_runs != '0') ||
+        (github.event_name == 'push' && contains(github.event.head_commit.message, '[live-stress]'))
+      }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      DEMO_SOURCE_GIT_SHA: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v5
@@ -105,7 +111,7 @@ jobs:
 
       - name: Run independent real-model proofs
         env:
-          LIVE_MODEL_RUNS: ${{ inputs.live_model_runs }}
+          LIVE_MODEL_RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.live_model_runs || '3' }}
         run: |
           mkdir -p stress-artifacts
           for run in $(seq 1 "${LIVE_MODEL_RUNS}"); do

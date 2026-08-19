@@ -34,10 +34,20 @@ model/tool telemetry. Retrace answers the next debugging question:
 
 > What exactly did the Python application do with that historical response?
 
-The demo uses Microsoft's production Hosted Agent Invocations adapter. Every
-`POST /invocations` request receives an invocation ID and session ID inside
-Microsoft's OTel request context. The application emits an invocation span and
-links it to its `.retrace` artifact with `retrace.recording.id`.
+The demo uses Microsoft's Hosted Agent container protocol 2.0 through the
+production Invocations adapter. Foundry injects `call_id`, `user_id`, and
+`session_id`; the SDK exposes them through `get_request_context()`. Foundry
+also forwards W3C `traceparent`, `tracestate`, and `baggage`. The application
+therefore joins its `.retrace` artifact to the active OTel trace and span with:
+
+```text
+recording_id + trace_id + span_id + foundry_call_id + session_id
+```
+
+The trace/span IDs are the diagnostic join. The Foundry call ID records the
+platform identity context. The local harness supplies the same platform
+headers that the real Foundry gateway injects; application callers do not
+invent a custom invocation header.
 
 Then Retrace:
 
@@ -70,7 +80,8 @@ workflow. It does not call Ollama. It:
 3. replays it three times with Docker networking disabled,
 4. requires the same score, route, exception, exit code, and traceback,
 5. verifies DAP stack, scopes, locals, Step Back, and forward return, and
-6. creates the workspace used by the VS Code walkthrough.
+6. verifies the recording's provenance manifest, and
+7. creates the workspace used by the VS Code walkthrough.
 
 This is the reliable stage path. The recording is not fabricated; it is a
 reviewed artifact from the complete live proof below.
@@ -142,6 +153,7 @@ replay=01 ... network=none match=yes
 replay=02 ... network=none match=yes
 replay=03 ... network=none match=yes
 dap=pass ... serial_number=None ...
+proof=pass ... trace_id=... span_id=...
 presentation=ready
 ```
 
@@ -156,7 +168,9 @@ code generated/DEMO_RESULTS.md
 
 The report shows the original real-model invocations: identical request hash,
 different scores, successful neighboring routes, the failed route, the
-recording ID, ten network-disabled replay matches, and DAP verification.
+recording ID, ten network-disabled replay matches, and DAP verification. The
+adjacent proof manifest binds the selected recording SHA to the source commit,
+model digest, model request/response hashes, Foundry context, and OTel span.
 
 ### 3. Open VS Code
 
@@ -285,14 +299,15 @@ The first run downloads the pinned Qwen model and builds the image. The proof:
 6. launches one sanitized `retracepython` worker per request,
 7. requires identical model-request hashes,
 8. continues until it has both a successful route and the rare failed route,
-9. preserves every invocation as a separate recording and manifest,
-10. exports and verifies the failed OTel span and recording correlation,
+9. preserves every invocation under the session's `$HOME/retrace` directory,
+10. exports and verifies the OTel trace/span/recording correlation,
 11. stops the model gateway,
 12. replays the failed invocation ten times under `--network none`,
 13. requires the same score, route, exception, exit code, and traceback,
 14. proves the model-call counter does not change during replay,
 15. verifies DAP historical locals and reverse navigation, and
-16. writes a human-readable and machine-readable proof.
+16. writes a human-readable report, machine-readable run summary, and
+    provenance manifest.
 
 Live sampling is real, so the number of calls varies. The harness allows at
 most 20 identical calls and fails instead of manufacturing a response.
@@ -306,8 +321,11 @@ generated/DEMO_RESULTS.md
 generated/run-summary.json
 generated/recordings/selected-failure.retrace
 generated/recordings/selected-failure.expected.json
+generated/recordings/selected-failure.proof.json
 generated/recordings/selected-failure.code-workspace
-generated/manifests/*.json
+generated/session-home/retrace/recordings/*.retrace
+generated/session-home/retrace/manifests/*.json
+generated/session-home/retrace/logs/*.log
 generated/invocations/live-*.json
 generated/replay/replay-*.log
 generated/telemetry/spans.jsonl
@@ -317,7 +335,47 @@ generated/counters/model-gateway.json
 
 `run-summary.json` contains the complete proof, including the failed exported
 span. `spans.jsonl` is decoded OTLP data emitted by Microsoft's host. The
-failed span carries the same `retrace.recording.id` as the selected manifest.
+failed span and persisted invocation manifest share the same trace ID, span ID,
+Foundry call ID, session ID, and `retrace.recording.id`.
+
+## Foundry Session Persistence
+
+Hosted Agent sessions persist `$HOME` and `/files` when compute scales to
+zero. The demo models that directly by setting:
+
+```text
+HOME=/app/generated/session-home
+```
+
+Each invocation publishes its artifacts atomically beneath:
+
+```text
+$HOME/retrace/recordings/
+$HOME/retrace/manifests/
+$HOME/retrace/logs/
+```
+
+In Foundry, the recording can therefore survive scale-to-zero in the existing
+session filesystem and be retrieved through the Session Files API. No new
+recording-storage primitive is required.
+
+The manifest is written only after the Retrace worker has exited and the
+recording hash has been calculated. Both the manifest file and parent
+directory are fsynced before publication.
+
+### Verify graceful shutdown
+
+```bash
+make lifecycle
+```
+
+This starts the real Microsoft adapter and a delayed model boundary, sends one
+invocation, waits until the Retrace worker is in flight, and sends `SIGTERM` to
+the Hosted Agent process. The test requires the request to drain, the
+recording and manifest to be complete under `$HOME`, the server to exit
+cleanly, and the trace to replay after the model service has been stopped.
+
+CI repeats this lifecycle proof five times on Linux/amd64.
 
 ## Direct Contract Checks
 
@@ -333,12 +391,16 @@ The invocation protocol is:
 curl -i -X POST \
   'http://localhost:8088/invocations?agent_session_id=demo-session' \
   -H 'Content-Type: application/json' \
-  -H 'x-agent-invocation-id: demo-invocation' \
+  -H 'x-agent-foundry-call-id: demo-call' \
+  -H 'x-agent-user-id: demo-user' \
+  -H 'traceparent: 00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' \
   --data @generated/requests/identical-request.json
 ```
 
-Microsoft's adapter echoes `x-agent-invocation-id` and returns
-`x-agent-session-id`.
+When deployed, Foundry injects the call/user headers and forwards trace
+context. They are shown explicitly here only to reproduce that gateway context
+against the local container. The adapter returns `x-agent-session-id`, while
+the response and recording manifest preserve the resolved session ID.
 
 ## Tests
 
@@ -357,7 +419,11 @@ The tests cover:
 - structured failure preservation,
 - sanitized worker environment,
 - Microsoft adapter wiring,
+- current `get_request_context()` call/user/session propagation,
 - OTLP span decoding,
+- atomic `$HOME/retrace` artifact publication,
+- in-flight `SIGTERM` drain and post-shutdown replay,
+- provenance-manifest integrity,
 - reviewed failed-recording offline replay, and
 - DAP stack, scopes, locals, Step Back, and forward return.
 
@@ -370,6 +436,7 @@ make model         # pull only the pinned Ollama model
 make build         # build the pinned Python 3.12 image
 make demo          # run the live proof without pulling the model first
 make test          # run formatting, lint, and tests in Docker
+make lifecycle     # interrupt an in-flight request and verify durable replay
 make vscode        # prepare the selected failed trace for VS Code
 make logs          # show service logs
 make clean         # remove this demo's generated state and Compose resources

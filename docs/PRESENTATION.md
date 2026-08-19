@@ -1,5 +1,18 @@
 # Four-Minute Presentation Script
 
+## Before The Meeting
+
+Run `make presentation` before screen sharing. Leave these three views open:
+
+1. `generated/DEMO_RESULTS.md` at the failed invocation and recording ID.
+2. A terminal showing `network=none match=yes` and `proof=pass`.
+3. VS Code already reopened in the Dev Container with the Retrace sidebar,
+   failure source, and historical recording ready.
+
+Do not rebuild the image or reopen the Dev Container during the meeting. The
+only live action should be entering the already prepared historical execution
+and using Step Back.
+
 ## 0:00 - The Problem
 
 Show the live-invocation table in `generated/DEMO_RESULTS.md`.
@@ -12,23 +25,18 @@ Say:
 
 ## 0:40 - Platform Trace To Recording
 
-Show the recording ID and telemetry section.
+Show the recording ID, OTel trace/span IDs, Foundry call/session context, and
+the verified proof-manifest SHA.
 
 Say:
 
-> The Hosted Agent trace tells us which invocation failed. The handler links
-> that span to this Retrace recording. Retrace gives us the executable artifact
-> behind the trace.
+> The Hosted Agent trace tells us which invocation failed. Its trace/span IDs
+> join directly to this session-persisted Retrace recording. The proof manifest
+> binds the recording hash to the source, model, and original invocation.
 
 ## 1:10 - Reproduce Without The Model
 
-Run:
-
-```bash
-make presentation
-```
-
-Point to the three `network=none match=yes` lines.
+Point to the already prepared `network=none match=yes` lines.
 
 Say:
 

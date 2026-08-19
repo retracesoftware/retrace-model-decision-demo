@@ -106,7 +106,7 @@ def in_offline_container(
             "--user",
             f"{HOST_UID}:{HOST_GID}",
             "--env",
-            "HOME=/tmp/retrace-demo-home",
+            "HOME=/tmp/retrace-offline-replay-home",
             "--volume",
             f"{ROOT}:/app",
             "--workdir",

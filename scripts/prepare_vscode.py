@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 from scripts.demo_state import GENERATED, ROOT
+from scripts.proof_manifest import verify_recording_proof
 from scripts.verify_dap import marker_line, verify
 
 
@@ -13,6 +14,8 @@ ACTIVE = GENERATED / "recordings" / "selected-failure.retrace"
 EXPECTED = GENERATED / "recordings" / "selected-failure.expected.json"
 FALLBACK = ROOT / "example-artifacts" / "selected-failure.retrace"
 FALLBACK_EXPECTED = ROOT / "example-artifacts" / "selected-failure.expected.json"
+ACTIVE_PROOF = GENERATED / "recordings" / "selected-failure.proof.json"
+FALLBACK_PROOF = ROOT / "example-artifacts" / "selected-failure.proof.json"
 
 
 def prepare() -> Path | None:
@@ -20,6 +23,7 @@ def prepare() -> Path | None:
         ACTIVE.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(FALLBACK, ACTIVE)
         shutil.copy2(FALLBACK_EXPECTED, EXPECTED)
+        shutil.copy2(FALLBACK_PROOF, ACTIVE_PROOF)
     if not ACTIVE.is_file():
         print(
             "No selected failure recording yet. Run `make demo` on the host, "
@@ -28,6 +32,9 @@ def prepare() -> Path | None:
         return None
     if not EXPECTED.is_file():
         raise AssertionError(f"selected recording expectation is missing: {EXPECTED}")
+    if not ACTIVE_PROOF.is_file():
+        raise AssertionError(f"selected recording proof is missing: {ACTIVE_PROOF}")
+    verify_recording_proof(ACTIVE, ACTIVE_PROOF)
 
     ACTIVE.chmod(ACTIVE.stat().st_mode | 0o111)
     shutil.rmtree(ACTIVE.with_suffix(".d"), ignore_errors=True)

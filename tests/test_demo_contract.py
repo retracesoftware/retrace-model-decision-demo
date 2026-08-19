@@ -18,6 +18,7 @@ from agent.manifest import write_manifest
 from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
+from scripts.proof_manifest import verify_recording_proof
 from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import (
     SOURCE,
@@ -156,6 +157,10 @@ def test_reviewed_presentation_artifact_is_complete() -> None:
     artifacts = ROOT / "example-artifacts"
     recording = artifacts / "selected-failure.retrace"
     expected = json.loads((artifacts / "selected-failure.expected.json").read_text())
+    proof = verify_recording_proof(
+        recording,
+        artifacts / "selected-failure.proof.json",
+    )
 
     assert recording.stat().st_size > 10_000
     assert expected["decision"]["decision"] == "request_more_information"
@@ -165,6 +170,14 @@ def test_reviewed_presentation_artifact_is_complete() -> None:
         "exception_message": "'NoneType' object has no attribute 'strip'",
     }
     assert expected["runtime_input"]["serial_number"] is None
+    assert proof["runtime"] == {
+        "python": "3.12.13",
+        "retracesoftware": "0.2.26",
+        "retracesoftware_dap": "0.2.26",
+    }
+    assert proof["model"]["name"] == "qwen3:1.7b"
+    assert len(proof["telemetry"]["trace_id"]) == 32
+    assert len(proof["telemetry"]["span_id"]) == 16
 
 
 def test_agent_uses_microsoft_invocation_contract() -> None:

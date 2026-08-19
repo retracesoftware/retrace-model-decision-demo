@@ -7,6 +7,7 @@ import shutil
 
 from agent.manifest import sha256_file
 from scripts.demo_state import ROOT
+from scripts.proof_manifest import verify_recording_proof
 
 
 DESTINATION = ROOT / "example-artifacts"
@@ -30,18 +31,11 @@ def promote(source: Path) -> None:
         raise FileNotFoundError(f"reviewed proof report is missing: {report_path}")
 
     expected = json.loads(expected_path.read_text())
-    proof = json.loads(proof_path.read_text())
-    if proof.get("artifact", {}).get("sha256") != sha256_file(recording):
-        raise AssertionError("proof manifest does not match the selected recording")
+    proof = verify_recording_proof(recording, proof_path)
     if expected.get("failure", {}).get("exception_type") != "AttributeError":
         raise AssertionError(
             f"reviewed artifact is not the expected failure: {expected}"
         )
-    if proof.get("telemetry", {}).get("trace_id") is None:
-        raise AssertionError("proof manifest omitted the OTel trace ID")
-    if proof.get("telemetry", {}).get("span_id") is None:
-        raise AssertionError("proof manifest omitted the OTel span ID")
-
     DESTINATION.mkdir(parents=True, exist_ok=True)
     shutil.copy2(recording, DESTINATION / recording.name)
     shutil.copy2(expected_path, DESTINATION / expected_path.name)

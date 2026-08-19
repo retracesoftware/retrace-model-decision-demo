@@ -410,7 +410,7 @@ Confirm:
 - the selected trace is `selected-failure.retrace`,
 - the breakpoint is on `RETRACE_MODEL_FAILURE_BREAKPOINT`,
 - scanning has finished, and
-- Continue was pressed once after entry.
+- replay has stopped directly on the historical breakpoint.
 
 Run the same DAP verifier used by CI:
 

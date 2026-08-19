@@ -44,7 +44,8 @@ Open the Dev Container and set a breakpoint on:
 normalized = serial_number.strip()  # RETRACE_MODEL_FAILURE_BREAKPOINT
 ```
 
-Start the process from the Retrace sidebar and press Continue once.
+Start the process from the Retrace sidebar. Replay stops directly on the
+historical failure breakpoint after scanning completes.
 
 Say:
 

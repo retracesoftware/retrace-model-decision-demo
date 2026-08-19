@@ -100,6 +100,114 @@ Reviewed recordings are supplied separately for Linux AMD64 and Linux ARM64,
 and the demo automatically selects the one matching Docker's native
 architecture.
 
+## How The Repository Is Assembled
+
+The demo has four cooperating parts:
+
+```text
+agent/
+  Microsoft Invocations host, request context, telemetry, and worker launch
+
+external_world/
+  model gateway and local OTLP collector used during fresh capture
+
+worker/
+  ordinary single-invocation Python application recorded by Retrace
+
+scripts/
+  orchestration, verification, replay, DAP, and artifact-provenance checks
+```
+
+During fresh capture, the long-lived host is not recorded. It launches one
+sanitized `retracepython` worker for each invocation. That worker makes the
+model-boundary request, parses the returned score, chooses the application
+route, and either succeeds or reaches the missing-serial-number failure.
+
+```text
+identical request
+  -> Invocations host
+  -> one Retrace worker
+  -> model gateway
+  -> real sampled Qwen response
+  -> deterministic Python routing
+  -> one .retrace recording
+```
+
+During replay, only the recorded worker is re-executed. The model gateway is
+unavailable and Docker networking is disabled. Retrace supplies the historical
+model-boundary result from the recording, so the ordinary Python code selects
+the same route and reaches the same result.
+
+```text
+.retrace recording
+  -> extracted root-process replay binary
+  -> historical model response supplied by Retrace
+  -> same Python route
+  -> same exception and exit code
+  -> DAP inspection of stack, scopes, and locals
+```
+
+## What Is Bundled
+
+The repository contains one reviewed genuine failed recording for each native
+Linux architecture supported by the demo:
+
+```text
+example-artifacts/
+  linux-amd64/
+    selected-failure.retrace
+    selected-failure.expected.json
+    selected-failure.proof.json
+    DEMO_RESULTS.failure.example.md
+  linux-arm64/
+    selected-failure.retrace
+    selected-failure.expected.json
+    selected-failure.proof.json
+    DEMO_RESULTS.failure.example.md
+```
+
+Each file has a distinct purpose:
+
+- `selected-failure.retrace` is the executable Retrace artifact captured from
+  a real Qwen-backed worker invocation.
+- `selected-failure.expected.json` contains the exact decision, exception,
+  exit code, and runtime input that every replay must reproduce.
+- `selected-failure.proof.json` binds the recording SHA-256 to its source
+  revision, worker hash, Python and Retrace versions, native platform, model
+  name and digest, request and response hashes, Foundry identifiers, and OTel
+  trace/span identifiers.
+- `DEMO_RESULTS.failure.example.md` is the human-readable report from that
+  reviewed run.
+
+Two `.retrace` files are necessary because the recording contains a native
+Linux replay executable. An AMD64 recording is replayed with the AMD64 image,
+and an ARM64 recording is replayed with the ARM64 image. Python and Retrace
+versions are also pinned so replay uses the environment represented by the
+recording.
+
+### How the bundled recordings were created
+
+The bundled recordings were not written by hand and the model response was
+not inserted into a fixture. Each artifact started as output from the complete
+fresh workflow:
+
+1. `make run` called the real sampled Qwen model with the identical request.
+2. The model naturally returned score `65` and Python selected
+   `request_more_information`.
+3. The recorded worker reached `serial_number=None` and raised the historical
+   `AttributeError` at `.strip()`.
+4. The harness selected that failed invocation and proved ten offline replays,
+   historical DAP state, model-call isolation, telemetry linkage, and artifact
+   integrity.
+5. The recording, expectation, proof manifest, and report were reviewed.
+6. A maintainer promoted them into the appropriate architecture directory
+   with `scripts/promote_reviewed_artifact.py`.
+
+Promotion rechecks the recording SHA, required provenance fields, native
+platform, and expected exception before copying anything under
+`example-artifacts/`. The public bundled workflow repeats those checks every
+time it runs.
+
 ## Requirements
 
 For the bundled replay:
@@ -215,6 +323,111 @@ The command verifies that the bundled recording matches its provenance
 manifest before executing it. The recording contains a genuine historical
 model response; replay supplies that recorded response rather than contacting
 Qwen.
+
+### What `make replay-example` does
+
+The Make target expands to:
+
+```text
+make replay-example
+  -> make preflight
+  -> make build
+  -> python3 -m scripts.run_replay_example
+```
+
+The workflow then performs these steps in order:
+
+1. Verifies that Docker and Docker Compose are available.
+2. Builds or refreshes the pinned Python 3.12 demo image for Docker's native
+   architecture.
+3. Clears old files beneath `generated/` so stale results cannot satisfy the
+   run.
+4. Reads Docker's architecture and selects `linux-amd64` or `linux-arm64`.
+5. Verifies the bundled recording's SHA-256, platform, source revision,
+   runtime versions, model hashes, Foundry IDs, and telemetry IDs.
+6. Copies the reviewed recording, expectation, proof, and report into
+   `generated/` as the active example.
+7. Extracts the recording and reads `index.json` to find the recorded root
+   Python process.
+8. Starts three independent replay containers with `--network none`.
+9. Requires every replay to reproduce the exact model decision, score,
+   exception type, exception message, traceback location, and worker exit
+   code stored in `selected-failure.expected.json`.
+10. Runs the DAP verifier against the same recording.
+11. Verifies a real initial source-breakpoint stop, stack, scopes, historical
+    locals, raised-exception stopping, Step Back, forward return, clean
+    no-breakpoint termination, and truthful capability handling.
+12. Generates `selected-failure.code-workspace` for visual debugging.
+
+The historical worker is expected to exit with code `1` because it reproduces
+the recorded application failure. The surrounding verification command exits
+successfully only when that failure exactly matches the reviewed expectation
+on every replay and all DAP checks pass.
+
+This workflow deliberately does not:
+
+- call Ollama or Qwen,
+- generate a new model response,
+- create a new recording,
+- contact a network service during replay, or
+- accept a different decision as equivalent.
+
+### Files produced by the bundled workflow
+
+After `make replay-example`, the important active files are:
+
+```text
+generated/DEMO_RESULTS.md
+generated/recordings/selected-failure.retrace
+generated/recordings/selected-failure.expected.json
+generated/recordings/selected-failure.proof.json
+generated/recordings/selected-failure.code-workspace
+generated/recordings/selected-failure.d/index.json
+generated/recordings/selected-failure.d/<root-pid>.bin
+generated/replay/replay-01.log
+generated/replay/replay-02.log
+generated/replay/replay-03.log
+generated/transcripts/dap.json
+generated/transcripts/dap-raised.json
+generated/transcripts/dap-no-breakpoint.json
+```
+
+The `.retrace` file is the original selected artifact. The `.d/` directory is
+its extracted process tree. The `.bin` file is the root process replay entry
+used by terminal replay and DAP. The replay logs preserve each independent
+offline run, while the transcript files contain the complete DAP request,
+response, and event exchanges used by the automated checks.
+
+### Reading the pass evidence
+
+These lines establish different parts of the proof:
+
+```text
+proof=pass ...
+```
+
+The committed recording matches the provenance manifest and native platform.
+
+```text
+replay=01 ... network=none match=yes
+```
+
+The replay had no network and reproduced the exact reviewed decision, failure,
+and exit code. The same requirement is applied independently to all three
+replays.
+
+```text
+dap=pass ... entry_stop=real ... locals=pass ...
+```
+
+The debugger reached a real inspectable historical stop and satisfied the DAP
+state, inspection, exception, and reverse-navigation checks.
+
+```text
+replay_example=ready
+```
+
+All verification completed and the recording is ready for VS Code.
 
 ## Debug Either Recording In VS Code
 
@@ -438,20 +651,61 @@ The tests cover:
 - reviewed failed-recording offline replay, and
 - DAP stack, scopes, locals, Step Back, and forward return.
 
-## Useful Commands
+## Command Reference
 
-```bash
-make run            # fresh model calls, recordings, and offline replay
-make replay-example # verify the bundled recording; no model call
-make presentation   # compatibility alias for make replay-example
-make model          # pull only the pinned Ollama model
-make build          # build the native Python 3.12 image
-make demo           # run the live proof without pulling the model first
-make test           # run formatting, lint, and tests in Docker
-make lifecycle      # interrupt an in-flight request and verify durable replay
-make vscode         # prepare the selected failed trace for VS Code
-make logs           # show service logs
-make clean          # remove this demo's generated state and Compose resources
+### Primary workflows
+
+| Command | What it does |
+| --- | --- |
+| `make run` | Runs `preflight`, pulls the pinned Qwen model, executes fresh real-model invocations, creates new recordings, selects a natural failure, performs ten network-disabled replays, validates DAP, and writes the complete proof set. |
+| `make replay-example` | Builds the native image, selects and verifies the architecture-matched bundled recording, performs three network-disabled replays, validates DAP, and generates the VS Code workspace. It makes no model call and creates no recording. |
+| `make presentation` | Compatibility alias for `make replay-example`. New instructions use the clearer `make replay-example` name. |
+
+### Setup and service control
+
+| Command | What it does |
+| --- | --- |
+| `make preflight` | Checks that Docker is reachable and suitable before other work starts. It does not build or run the demo. |
+| `make model` | Pulls the pinned `qwen3:1.7b` model into local Ollama. It does not start the demo. |
+| `make build` | Pulls the pinned Python base image and builds `retrace-model-decision-demo:py312` for Docker's native architecture. |
+| `make prepare` | Builds the image and resets the mounted `generated/` workspace from a one-shot container. |
+| `make start` | Starts the Invocations host, model gateway, and telemetry collector with Compose and waits for their health checks. Ollama must already be running for live model calls. |
+| `make stop` | Stops this demo's Compose services and removes orphaned containers without deleting unrelated Docker state. |
+| `make status` | Shows the current Compose service state. |
+| `make logs` | Prints logs from this demo's Compose services. |
+| `make shell` | Opens Bash inside the running `agent` service. Run `make start` first. |
+
+### Verification and development
+
+| Command | What it does |
+| --- | --- |
+| `make demo` | Runs the fresh orchestration script without first executing the `make model` dependency. Use it only when Ollama and the pinned model are already ready. |
+| `make test` | Runs Ruff linting, Ruff formatting checks, and the Python test suite inside the pinned image. It does not call the model. |
+| `make lifecycle` | Sends `SIGTERM` while a model request is in flight and proves graceful drain, durable recording publication, clean server exit, and replay after shutdown. |
+| `make vscode` | Selects a compatible failed recording, verifies its proof, extracts and indexes it, creates the `.code-workspace`, and runs the DAP preflight. The Dev Container runs the same preparation automatically. |
+| `make clean` | Stops this demo's Compose services, removes only this demo's Compose volumes, and clears generated demo output. It does not run a global Docker prune. |
+
+### The two main command chains
+
+```text
+make run
+  -> preflight
+  -> model
+  -> demo
+  -> fresh model calls
+  -> fresh recordings
+  -> ten offline replays
+  -> DAP and evidence validation
+```
+
+```text
+make replay-example
+  -> preflight
+  -> build
+  -> verified bundled recording
+  -> three offline replays
+  -> DAP and provenance validation
+  -> VS Code workspace
 ```
 
 ## Architecture And Presentation Script

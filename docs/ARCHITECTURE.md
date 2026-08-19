@@ -215,9 +215,10 @@ protocol and the same replay binary.
 `make run` is the complete stochastic proof. It makes fresh real-model calls
 and must discover both a successful route and the rare failed route.
 
-`make presentation` uses a reviewed genuine failed artifact captured by that
-proof. It is deterministic and does not require the model. It still validates
+`make replay-example` uses an architecture-matched, reviewed genuine failed
+artifact captured by that proof. It does not require the model. It validates
 the artifact through offline replay and DAP before the visual walkthrough.
 
-This separation avoids making a stage demo depend on a narrow random score
-band while preserving the authenticity of the recording.
+The bundled replay is an independent convenience path. The fresh-capture path
+remains the primary proof that Retrace records a newly observed model-dependent
+execution.

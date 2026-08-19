@@ -22,6 +22,7 @@ from scripts.demo_state import (
     canonical_json,
     reset_generated,
 )
+from scripts.platforms import docker_architecture
 
 
 COMPOSE = ["docker", "compose", "--file", str(ROOT / "compose.yaml")]
@@ -95,8 +96,6 @@ def in_offline_container(
             "docker",
             "run",
             "--rm",
-            "--platform",
-            "linux/amd64",
             "--network",
             "none",
             "--memory",
@@ -466,6 +465,7 @@ def write_selected_proof_manifest(
             "sha256": sha256_file(selected),
             "original_recording_id": manifest["recording_id"],
             "original_recording_sha256": manifest["recording_sha256"],
+            "platform": f"linux/{docker_architecture()}",
         },
         "source": {
             "git_sha": manifest["source_git_sha"],

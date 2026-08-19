@@ -19,6 +19,7 @@ from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
 from scripts.proof_manifest import verify_recording_proof
+from scripts.platforms import normalize_architecture, reviewed_artifact_directory
 from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import (
     SOURCE,
@@ -151,15 +152,38 @@ def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
 
     assert 'user: "${DEMO_UID:-0}:${DEMO_GID:-0}"' in compose
     assert "HOME: /app/generated/session-home" in compose
+    assert "platform: linux/amd64" not in compose
+
+    devcontainer_compose = (ROOT / ".devcontainer" / "compose.yaml").read_text()
+    assert "platform: linux/amd64" not in devcontainer_compose
 
 
-def test_reviewed_presentation_artifact_is_complete() -> None:
-    artifacts = ROOT / "example-artifacts"
+def test_supported_docker_architectures_use_native_reviewed_artifacts() -> None:
+    assert normalize_architecture("x86_64") == "amd64"
+    assert normalize_architecture("amd64") == "amd64"
+    assert normalize_architecture("aarch64") == "arm64"
+    assert normalize_architecture("arm64") == "arm64"
+    assert reviewed_artifact_directory(ROOT, "arm64") == (
+        ROOT / "example-artifacts" / "linux-arm64"
+    )
+
+
+@pytest.mark.parametrize(
+    "architecture",
+    tuple(
+        path.name.removeprefix("linux-")
+        for path in sorted((ROOT / "example-artifacts").glob("linux-*"))
+        if path.is_dir()
+    ),
+)
+def test_reviewed_presentation_artifact_is_complete(architecture: str) -> None:
+    artifacts = reviewed_artifact_directory(ROOT, architecture)
     recording = artifacts / "selected-failure.retrace"
     expected = json.loads((artifacts / "selected-failure.expected.json").read_text())
     proof = verify_recording_proof(
         recording,
         artifacts / "selected-failure.proof.json",
+        expected_platform=f"linux/{architecture}",
     )
 
     assert recording.stat().st_size > 10_000

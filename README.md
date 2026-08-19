@@ -62,54 +62,59 @@ The exact positioning is:
 > Foundry tells you which agent invocation failed. Retrace lets you re-enter
 > that exact historical Python execution and debug why.
 
-## Two Workflows
+## What You Can Run
 
-The repository intentionally separates engineering proof from presentation.
+The repository provides two independent workflows.
 
-### Presentation workflow
-
-```bash
-make presentation
-```
-
-This uses a reviewed **genuine failed recording** captured from the real Qwen
-workflow. It does not call Ollama. It:
-
-1. copies the reviewed failed trace into `generated/`,
-2. extracts it,
-3. replays it three times with Docker networking disabled,
-4. requires the same score, route, exception, exit code, and traceback,
-5. verifies DAP stack, scopes, locals, Step Back, and forward return, and
-6. verifies the recording's provenance manifest, and
-7. creates the workspace used by the VS Code walkthrough.
-
-This is the reliable stage path. The recording is not fabricated; it is a
-reviewed artifact from the complete live proof below.
-
-### Complete live proof
+### Capture fresh model invocations
 
 ```bash
 make run
 ```
 
-This starts the real model and captures fresh invocations. It is the deeper
-engineering validation path and deliberately depends on genuine sampling.
+This is the complete record-and-replay proof. It makes fresh calls to a real
+Qwen model and creates new Retrace recordings on your machine. The same model
+request is repeated until sampling produces at least two application decisions,
+including one successful invocation and the rare failing route. The harness
+then stops the model gateway and replays the newly recorded failure ten times
+with Docker networking disabled.
+
+This workflow proves that Retrace can capture a model-dependent execution as it
+happens and reproduce it after the model is unavailable.
+
+### Replay a bundled verified recording
+
+```bash
+make replay-example
+```
+
+This does **not** make a new model call or create a new recording. It uses a
+small, reviewed `.retrace` artifact previously produced by `make run` from a
+real Qwen invocation. It verifies the artifact's SHA-256 provenance manifest,
+replays the failure three times with networking disabled, exercises the DAP
+server, and creates the VS Code workspace.
+
+The bundled recording provides a quick way to inspect a known historical
+execution. It complements rather than replaces the fresh-capture workflow.
+Reviewed recordings are supplied separately for Linux AMD64 and Linux ARM64,
+and the demo automatically selects the one matching Docker's native
+architecture.
 
 ## Requirements
 
-For presentation mode:
+For the bundled replay:
 
 - Git
 - Docker Desktop or Docker Engine with Docker Compose
 - VS Code
 - the VS Code Dev Containers extension
 
-For the complete live proof, also install [Ollama](https://ollama.com/).
+For fresh capture, also install [Ollama](https://ollama.com/).
 
 The image is pinned to:
 
 ```text
-Debian Bookworm, Linux/amd64
+Debian Bookworm, native Linux/AMD64 or Linux/ARM64
 Python 3.12.13
 retracesoftware==0.2.26
 retracesoftware-dap==0.2.26
@@ -133,58 +138,87 @@ Install the Dev Containers extension if needed:
 code --install-extension ms-vscode-remote.remote-containers
 ```
 
-## Reliable Presentation Walkthrough
+## Capture And Replay Fresh Model Decisions
 
-Prepare this workflow before the meeting. Do not build the image or reopen the
-Dev Container while screen sharing. Leave these three views ready:
-
-1. `generated/DEMO_RESULTS.md` at the failed invocation and recording ID.
-2. A terminal showing the verified recording SHA plus the
-   `network=none match=yes` replay lines.
-3. VS Code already connected to the Dev Container, with the historical source
-   and Retrace sidebar open.
-
-The live action is entering the prepared historical execution, inspecting its
-locals, and using Step Back.
-
-### 1. Prepare and verify the historical failure
-
-Make sure Docker is running, then execute:
+Start Ollama:
 
 ```bash
-make presentation
+ollama serve
+```
+
+In another terminal, run:
+
+```bash
+make run
+```
+
+The first run pulls the pinned `qwen3:1.7b` model and builds the native Docker
+image. The harness then:
+
+1. starts the Invocations host, model gateway, and OTLP collector,
+2. sends the identical request to the sampled model,
+3. starts one sanitized `retracepython` worker per invocation,
+4. creates one fresh recording for every model decision,
+5. requires identical model-request hashes across calls,
+6. waits for different decisions plus a naturally selected failure,
+7. selects that newly captured failed recording,
+8. stops the model gateway,
+9. replays the recording ten times with `--network none`,
+10. verifies the model-call counter did not change during replay,
+11. verifies historical stack, scopes, locals, and reverse navigation, and
+12. writes the report, run summary, telemetry join, and proof manifest.
+
+Live sampling is real. A single invocation is not guaranteed to fail. The
+harness allows at most 20 identical calls and fails rather than manufacturing
+a score or response.
+
+Successful output includes:
+
+```text
+live=01 decision=... score=... recording=...
+replay=01 ... network=none match=yes
+...
+replay=10 ... network=none match=yes
+dap=pass ...
+```
+
+The fresh selected recording is written to:
+
+```text
+generated/recordings/selected-failure.retrace
+```
+
+## Replay The Bundled Historical Example
+
+To exercise replay and DAP without calling the model:
+
+```bash
+make replay-example
 ```
 
 Expected evidence includes:
 
 ```text
-presentation=reviewed-genuine-failed-invocation
+replay_example=reviewed-genuine-failed-invocation
+docker_architecture=arm64  # or amd64
 historical_model=score:65 route:request_more_information
 historical_failure=AttributeError: 'NoneType' object has no attribute 'strip'
 replay=01 ... network=none match=yes
 replay=02 ... network=none match=yes
 replay=03 ... network=none match=yes
-dap=pass ... serial_number=None ...
-proof=pass ... trace_id=... span_id=...
-presentation=ready
+dap=pass ...
+proof=pass ...
+replay_example=ready
 ```
 
-This expected `AttributeError` is the incident being demonstrated. A green
-presentation preparation reproduces it and verifies its debugger state.
+The command verifies that the bundled recording matches its provenance
+manifest before executing it. The recording contains a genuine historical
+model response; replay supplies that recorded response rather than contacting
+Qwen.
 
-### 2. Show the evidence summary
+## Debug Either Recording In VS Code
 
-```bash
-code generated/DEMO_RESULTS.md
-```
-
-The report shows the original real-model invocations: identical request hash,
-different scores, successful neighboring routes, the failed route, the
-recording ID, ten network-disabled replay matches, and DAP verification. The
-adjacent proof manifest binds the selected recording SHA to the source commit,
-model digest, model request/response hashes, Foundry context, and OTel span.
-
-### 3. Open VS Code
+After `make run` or `make replay-example`, open the repository:
 
 ```bash
 code .
@@ -204,12 +238,13 @@ The Dev Container automatically:
 
 - installs `RetraceSoftware.retrace-debug-extension` remotely,
 - selects `/app/generated/recordings/selected-failure.retrace`,
-- copies the reviewed artifact when no fresh artifact exists,
+- uses the fresh selected recording when one exists,
+- otherwise copies the architecture-matched bundled recording,
 - extracts and indexes the recording,
 - generates its `.code-workspace`, and
 - runs the automated DAP preflight.
 
-### 4. Set the failure breakpoint
+### Set the failure breakpoint
 
 Open:
 
@@ -234,7 +269,7 @@ This point was chosen because all evidence is present together:
 - the runtime `serial_number=None`, and
 - the exact operation that fails.
 
-### 5. Start replay debugging
+### Start replay debugging
 
 1. Click the Retrace icon in the left activity bar.
 2. Find the Python process under `selected-failure.retrace`.
@@ -246,7 +281,7 @@ The automated DAP preflight verifies that the breakpoint is discoverable and
 that the historical stack, scopes, locals, Step Back, and forward return all
 work before VS Code is opened.
 
-### 6. Inspect historical runtime state
+### Inspect historical runtime state
 
 Open Run and Debug, then inspect Variables and Locals:
 
@@ -275,59 +310,18 @@ real model returned score 65
 The debugger does not request a new inference. It is inspecting the recorded
 model result and re-executed historical Python path.
 
-### 7. Time travel
+### Time travel
 
 Use Step Back to move from the failing operation toward score routing. Then
 use Continue or Step Over to move forward to the same failure again. Also show
 Call Stack, Scopes, and Locals.
 
-The closing line is:
-
-> The platform trace identifies the failed invocation. Retrace preserves the
-> execution behind it, reproduces it without the model, and lets us debug the
-> historical Python state as code.
-
-## Complete Live Proof
-
-Start Ollama:
-
-```bash
-ollama serve
-```
-
-In another terminal, run:
-
-```bash
-make run
-```
-
-The first run downloads the pinned Qwen model and builds the image. The proof:
-
-1. verifies Docker and the pinned model digest,
-2. starts Microsoft's Invocations host at port `8088`,
-3. starts a real Ollama model gateway,
-4. starts a local OTLP collector,
-5. sends identical `POST /invocations` requests,
-6. launches one sanitized `retracepython` worker per request,
-7. requires identical model-request hashes,
-8. continues until it has both a successful route and the rare failed route,
-9. preserves every invocation under the session's `$HOME/retrace` directory,
-10. exports and verifies the OTel trace/span/recording correlation,
-11. stops the model gateway,
-12. replays the failed invocation ten times under `--network none`,
-13. requires the same score, route, exception, exit code, and traceback,
-14. proves the model-call counter does not change during replay,
-15. verifies DAP historical locals and reverse navigation, and
-16. writes a human-readable report, machine-readable run summary, and
-    provenance manifest.
+The debugger is re-executing the selected historical recording. It does not
+make a new model inference.
 
 The full proof runs each service at or below 1 CPU and 1 GiB. Offline replay
-is separately constrained to 1 CPU and 768 MiB. CI exercises the actual
-recording, replay, DAP, and shutdown paths under those limits; these are
-correctness/resource-fit checks, not latency benchmarks.
-
-Live sampling is real, so the number of calls varies. The harness allows at
-most 20 identical calls and fails instead of manufacturing a response.
+is constrained to 1 CPU and 768 MiB. Docker runs the image natively on AMD64
+and ARM64; Apple Silicon does not emulate an AMD64 image.
 
 ## Generated Evidence
 
@@ -447,8 +441,9 @@ The tests cover:
 ## Useful Commands
 
 ```bash
-make presentation  # verify the reviewed failed artifact; no Ollama call
-make run           # execute the complete real-model proof
+make run            # fresh model calls, recordings, and offline replay
+make replay-example # verify the bundled recording; no model call
+make presentation   # compatibility alias for make replay-example
 make model         # pull only the pinned Ollama model
 make build         # build the pinned Python 3.12 image
 make demo          # run the live proof without pulling the model first
@@ -462,7 +457,7 @@ make clean         # remove this demo's generated state and Compose resources
 ## Architecture And Presentation Script
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Four-minute presentation script](docs/PRESENTATION.md)
+- [Guided walkthrough](docs/GUIDED_WALKTHROUGH.md)
 
 ## Troubleshooting
 
@@ -478,13 +473,13 @@ Run `ollama serve`, then verify:
 curl http://127.0.0.1:11434/api/tags
 ```
 
-Presentation mode does not require Ollama.
+The bundled replay does not require Ollama.
 
 ### The live model does not select the rare route
 
 This is genuine sampling. The proof makes up to 20 identical calls and fails
-without manufacturing a score. Use `make presentation` for a guaranteed
-walkthrough of the reviewed genuine failed invocation.
+without manufacturing a score. Use `make replay-example` to inspect the
+bundled genuine failed invocation without waiting for fresh sampling.
 
 ### VS Code does not stop
 
@@ -511,7 +506,9 @@ make clean
 ```
 
 Resource limits are defined for every Compose service and every offline replay
-container. Do not run multiple live proofs concurrently on one laptop.
+container. The demo builds for Docker's native architecture, so Apple Silicon
+does not run the Linux AMD64 image through emulation. Do not run multiple live
+proofs concurrently on one laptop.
 
 ## License
 

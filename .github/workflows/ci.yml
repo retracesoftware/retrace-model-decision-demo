@@ -18,6 +18,11 @@ on:
           - "1"
           - "3"
           - "5"
+      generate_arm64_artifact:
+        description: Generate a reviewed Linux ARM64 recording artifact
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -46,11 +51,11 @@ jobs:
             docker compose --file compose.yaml run --rm --no-deps agent \
             python -m scripts.prepare_vscode
 
-      - name: Repeat the offline presentation and DAP proof five times
+      - name: Repeat the bundled replay and DAP proof five times
         run: |
           for run in 1 2 3 4 5; do
-            echo "presentation_run=${run}"
-            python3 -m scripts.run_presentation
+            echo "replay_example_run=${run}"
+            python3 -m scripts.run_replay_example
           done
 
       - name: Drain five in-flight recordings across SIGTERM
@@ -59,11 +64,11 @@ jobs:
             docker compose --file compose.yaml run --rm --no-deps agent \
             python -m scripts.verify_foundry_lifecycle --runs 5
 
-      - name: Upload presentation and lifecycle proof
+      - name: Upload bundled replay and lifecycle proof
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: presentation-and-lifecycle-proof
+          name: bundled-replay-and-lifecycle-proof
           path: |
             generated/DEMO_RESULTS.md
             generated/recordings/selected-failure.expected.json
@@ -110,7 +115,7 @@ jobs:
         run: |
           ollama pull qwen3:1.7b
           docker compose --file compose.yaml build
-          docker run --rm --platform linux/amd64 \
+          docker run --rm \
             --add-host host.docker.internal:host-gateway \
             retrace-model-decision-demo:py312 \
             curl --fail --silent http://host.docker.internal:11434/api/tags
@@ -143,6 +148,71 @@ jobs:
           name: live-model-stress-proof
           path: stress-artifacts/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show Ollama diagnostics on failure
+        if: ${{ failure() }}
+        run: cat /tmp/ollama.log || true
+
+      - name: Remove runner containers
+        if: ${{ always() && hashFiles('compose.yaml') != '' }}
+        run: docker compose --file compose.yaml down --remove-orphans --volumes
+
+  generate-arm64-reviewed-artifact:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' &&
+        inputs.generate_arm64_artifact
+      }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      DEMO_SOURCE_GIT_SHA: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install and start native ARM64 Ollama
+        run: |
+          curl --fail --silent --show-error --location \
+            https://ollama.com/install.sh | sh
+          sudo systemctl disable --now ollama || true
+          OLLAMA_HOST=0.0.0.0:11434 \
+            nohup ollama serve > /tmp/ollama.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ollama.log
+          exit 1
+
+      - name: Pull Qwen and build the native ARM64 image
+        run: |
+          ollama pull qwen3:1.7b
+          docker compose --file compose.yaml build
+          test "$(docker image inspect retrace-model-decision-demo:py312 \
+            --format '{{.Architecture}}')" = "arm64"
+          docker run --rm \
+            --add-host host.docker.internal:host-gateway \
+            retrace-model-decision-demo:py312 \
+            curl --fail --silent http://host.docker.internal:11434/api/tags
+
+      - name: Capture and validate a native ARM64 failure
+        run: python3 -m scripts.run_demo --skip-build
+
+      - name: Upload the reviewed ARM64 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-reviewed-recording-candidate
+          path: |
+            generated/DEMO_RESULTS.md
+            generated/run-summary.json
+            generated/recordings/selected-failure.retrace
+            generated/recordings/selected-failure.expected.json
+            generated/recordings/selected-failure.proof.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Show Ollama diagnostics on failure

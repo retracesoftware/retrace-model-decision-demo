@@ -7,23 +7,26 @@ import subprocess
 
 from scripts.demo_state import GENERATED, ROOT
 from scripts.proof_manifest import verify_recording_proof
+from scripts.platforms import docker_architecture, reviewed_artifact_directory
 from scripts.verify_dap import marker_line, verify
 
 
 ACTIVE = GENERATED / "recordings" / "selected-failure.retrace"
 EXPECTED = GENERATED / "recordings" / "selected-failure.expected.json"
-FALLBACK = ROOT / "example-artifacts" / "selected-failure.retrace"
-FALLBACK_EXPECTED = ROOT / "example-artifacts" / "selected-failure.expected.json"
 ACTIVE_PROOF = GENERATED / "recordings" / "selected-failure.proof.json"
-FALLBACK_PROOF = ROOT / "example-artifacts" / "selected-failure.proof.json"
 
 
 def prepare() -> Path | None:
-    if not ACTIVE.is_file() and FALLBACK.is_file():
+    architecture = docker_architecture()
+    fallback_directory = reviewed_artifact_directory(ROOT, architecture)
+    fallback = fallback_directory / "selected-failure.retrace"
+    fallback_expected = fallback_directory / "selected-failure.expected.json"
+    fallback_proof = fallback_directory / "selected-failure.proof.json"
+    if not ACTIVE.is_file() and fallback.is_file():
         ACTIVE.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(FALLBACK, ACTIVE)
-        shutil.copy2(FALLBACK_EXPECTED, EXPECTED)
-        shutil.copy2(FALLBACK_PROOF, ACTIVE_PROOF)
+        shutil.copy2(fallback, ACTIVE)
+        shutil.copy2(fallback_expected, EXPECTED)
+        shutil.copy2(fallback_proof, ACTIVE_PROOF)
     if not ACTIVE.is_file():
         print(
             "No selected failure recording yet. Run `make demo` on the host, "
@@ -34,7 +37,11 @@ def prepare() -> Path | None:
         raise AssertionError(f"selected recording expectation is missing: {EXPECTED}")
     if not ACTIVE_PROOF.is_file():
         raise AssertionError(f"selected recording proof is missing: {ACTIVE_PROOF}")
-    verify_recording_proof(ACTIVE, ACTIVE_PROOF)
+    verify_recording_proof(
+        ACTIVE,
+        ACTIVE_PROOF,
+        expected_platform=f"linux/{architecture}",
+    )
 
     ACTIVE.chmod(ACTIVE.stat().st_mode | 0o111)
     shutil.rmtree(ACTIVE.with_suffix(".d"), ignore_errors=True)

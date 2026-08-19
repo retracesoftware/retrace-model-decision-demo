@@ -3,6 +3,7 @@
     "original_recording_id": "decision-2c1bc505-c005-429e-a72c-20be1023a92b",
     "original_recording_sha256": "627e9b7924d08bea91c0cc948b2bd6cd6dffbdb0fbc95d4ddcc9931d83c0b696",
     "path": "selected-failure.retrace",
+    "platform": "linux/amd64",
     "sha256": "627e9b7924d08bea91c0cc948b2bd6cd6dffbdb0fbc95d4ddcc9931d83c0b696"
   },
   "foundry": {

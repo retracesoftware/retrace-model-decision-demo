@@ -8,9 +8,7 @@ import shutil
 from agent.manifest import sha256_file
 from scripts.demo_state import ROOT
 from scripts.proof_manifest import verify_recording_proof
-
-
-DESTINATION = ROOT / "example-artifacts"
+from scripts.platforms import docker_architecture, reviewed_artifact_directory
 
 
 def source_file(source: Path, name: str) -> Path:
@@ -22,7 +20,7 @@ def source_file(source: Path, name: str) -> Path:
     raise FileNotFoundError(f"reviewed artifact input is missing {name}: {source}")
 
 
-def promote(source: Path) -> None:
+def promote(source: Path, architecture: str | None = None) -> None:
     recording = source_file(source, "selected-failure.retrace")
     expected_path = source_file(source, "selected-failure.expected.json")
     proof_path = source_file(source, "selected-failure.proof.json")
@@ -31,17 +29,26 @@ def promote(source: Path) -> None:
         raise FileNotFoundError(f"reviewed proof report is missing: {report_path}")
 
     expected = json.loads(expected_path.read_text())
-    proof = verify_recording_proof(recording, proof_path)
+    selected_architecture = architecture or docker_architecture()
+    proof = verify_recording_proof(
+        recording,
+        proof_path,
+        expected_platform=f"linux/{selected_architecture}",
+    )
     if expected.get("failure", {}).get("exception_type") != "AttributeError":
         raise AssertionError(
             f"reviewed artifact is not the expected failure: {expected}"
         )
-    DESTINATION.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(recording, DESTINATION / recording.name)
-    shutil.copy2(expected_path, DESTINATION / expected_path.name)
-    shutil.copy2(proof_path, DESTINATION / proof_path.name)
-    shutil.copy2(report_path, DESTINATION / "DEMO_RESULTS.failure.example.md")
-    print(f"promoted_recording={DESTINATION / recording.name}")
+    destination = reviewed_artifact_directory(
+        ROOT,
+        selected_architecture,
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(recording, destination / recording.name)
+    shutil.copy2(expected_path, destination / expected_path.name)
+    shutil.copy2(proof_path, destination / proof_path.name)
+    shutil.copy2(report_path, destination / "DEMO_RESULTS.failure.example.md")
+    print(f"promoted_recording={destination / recording.name}")
     print(f"recording_sha256={sha256_file(recording)}")
     print(f"source_git_sha={proof['source']['git_sha']}")
     print(f"trace_id={proof['telemetry']['trace_id']}")
@@ -51,8 +58,9 @@ def promote(source: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
+    parser.add_argument("--architecture", choices=("amd64", "arm64"))
     args = parser.parse_args()
-    promote(args.source.resolve())
+    promote(args.source.resolve(), args.architecture)
 
 
 if __name__ == "__main__":

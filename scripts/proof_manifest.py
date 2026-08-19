@@ -10,6 +10,7 @@ from agent.manifest import sha256_file
 REQUIRED_VALUES = (
     ("artifact", "original_recording_id"),
     ("artifact", "original_recording_sha256"),
+    ("artifact", "platform"),
     ("source", "git_sha"),
     ("source", "worker_sha256"),
     ("runtime", "python"),
@@ -27,7 +28,12 @@ REQUIRED_VALUES = (
 )
 
 
-def verify_recording_proof(recording: Path, proof_path: Path) -> dict[str, Any]:
+def verify_recording_proof(
+    recording: Path,
+    proof_path: Path,
+    *,
+    expected_platform: str | None = None,
+) -> dict[str, Any]:
     proof = json.loads(proof_path.read_text())
     if proof.get("schema_version") != 1:
         raise AssertionError(f"unsupported recording proof schema: {proof}")
@@ -40,4 +46,11 @@ def verify_recording_proof(recording: Path, proof_path: Path) -> dict[str, Any]:
         value = proof.get(section, {}).get(key)
         if not isinstance(value, str) or not value:
             raise AssertionError(f"recording proof omitted {section}.{key}")
+    if expected_platform is not None:
+        actual_platform = proof["artifact"]["platform"]
+        if actual_platform != expected_platform:
+            raise AssertionError(
+                f"recording platform {actual_platform!r} does not match "
+                f"{expected_platform!r}"
+            )
     return proof

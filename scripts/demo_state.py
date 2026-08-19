@@ -8,6 +8,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "generated"
+SESSION_HOME = GENERATED / "session-home"
+SESSION_ARTIFACTS = SESSION_HOME / "retrace"
 CASE = {
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "serial_number": None,
@@ -49,6 +51,8 @@ def reset_generated() -> None:
         "telemetry",
     ):
         (GENERATED / name).mkdir(parents=True, exist_ok=True)
+    for name in ("recordings", "manifests", "logs", "worker-homes"):
+        (SESSION_ARTIFACTS / name).mkdir(parents=True, exist_ok=True)
     (GENERATED / "requests" / "identical-request.json").write_text(
         json.dumps(
             {

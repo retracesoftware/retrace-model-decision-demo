@@ -9,8 +9,10 @@ x-demo-service: &demo-service
   environment: &demo-environment
     DEMO_ROOT: /app
     DEMO_GENERATED_ROOT: /app/generated
-    HOME: /tmp/retrace-demo-home
+    HOME: /app/generated/session-home
     PYTHONPATH: /app
+    DEMO_SOURCE_GIT_SHA: "${DEMO_SOURCE_GIT_SHA:-unknown}"
+    OLLAMA_MODEL_DIGEST: "${OLLAMA_MODEL_DIGEST:-8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7}"
   volumes:
     - .:/app:cached
   mem_limit: 1g

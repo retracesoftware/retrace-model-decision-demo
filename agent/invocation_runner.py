@@ -19,6 +19,11 @@ ROOT = Path(os.environ.get("DEMO_ROOT", "/app"))
 GENERATED = Path(os.environ.get("DEMO_GENERATED_ROOT", ROOT / "generated"))
 
 
+def session_artifact_root() -> Path:
+    configured = os.environ.get("RETRACE_SESSION_ARTIFACT_ROOT")
+    return Path(configured) if configured else Path.home() / "retrace"
+
+
 @dataclass(frozen=True)
 class InvocationResult:
     recording_id: str
@@ -85,11 +90,12 @@ async def run_recorded_invocation(
 ) -> InvocationResult:
     recording_id = f"decision-{uuid.uuid4()}"
     request_json = json.dumps(request_payload, sort_keys=True, separators=(",", ":"))
-    recording_path = GENERATED / "recordings" / f"{recording_id}.retrace"
-    manifest_path = GENERATED / "manifests" / f"{recording_id}.json"
-    stdout_path = GENERATED / "logs" / f"{recording_id}.stdout.log"
-    stderr_path = GENERATED / "logs" / f"{recording_id}.stderr.log"
-    invocation_home = GENERATED / "homes" / recording_id
+    artifact_root = session_artifact_root()
+    recording_path = artifact_root / "recordings" / f"{recording_id}.retrace"
+    manifest_path = artifact_root / "manifests" / f"{recording_id}.json"
+    stdout_path = artifact_root / "logs" / f"{recording_id}.stdout.log"
+    stderr_path = artifact_root / "logs" / f"{recording_id}.stderr.log"
+    invocation_home = artifact_root / "worker-homes" / recording_id
 
     for path in (
         recording_path.parent,
@@ -151,9 +157,13 @@ async def run_recorded_invocation(
         ),
         "request_sha256": sha256_text(request_json),
         "source_sha256": _source_hash(),
-        "request_id": request_context.get("request_id"),
+        "source_git_sha": os.environ.get("DEMO_SOURCE_GIT_SHA", "unknown"),
+        "foundry_call_id": request_context.get("foundry_call_id"),
         "user_id": request_context.get("user_id"),
         "session_id": request_context.get("session_id"),
+        "trace_id": request_context.get("trace_id"),
+        "span_id": request_context.get("span_id"),
+        "protocol_invocation_id": request_context.get("protocol_invocation_id"),
         "worker_exit_code": worker_exit_code,
         "recording_available": recording_available,
         "started_at": started_at,
@@ -161,6 +171,7 @@ async def run_recorded_invocation(
         "python_version": sys.version.split()[0],
         "retracesoftware_version": version("retracesoftware"),
         "retracesoftware_dap_version": version("retracesoftware-dap"),
+        "model_digest": os.environ.get("OLLAMA_MODEL_DIGEST"),
         "stdout_path": str(stdout_path),
         "stderr_path": str(stderr_path),
         "decision": decision,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 from pathlib import Path
 import select
 import subprocess
@@ -10,8 +11,9 @@ import time
 from typing import Any, Callable
 
 
-ROOT = Path("/app")
+ROOT = Path(os.environ.get("DEMO_ROOT", "/app"))
 SOURCE = ROOT / "worker" / "decision_agent.py"
+LOCAL_SOURCE = Path(__file__).resolve().parents[1] / "worker" / "decision_agent.py"
 MARKER = "RETRACE_MODEL_FAILURE_BREAKPOINT"
 
 
@@ -48,9 +50,10 @@ def trace_index(recording: Path) -> dict[str, Any]:
 
 
 def marker_line() -> int:
+    source = SOURCE if SOURCE.is_file() else LOCAL_SOURCE
     matches = [
         number
-        for number, text in enumerate(SOURCE.read_text().splitlines(), start=1)
+        for number, text in enumerate(source.read_text().splitlines(), start=1)
         if MARKER in text
     ]
     if len(matches) != 1:

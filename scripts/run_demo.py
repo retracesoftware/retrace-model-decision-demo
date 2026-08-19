@@ -12,9 +12,16 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from agent.manifest import sha256_file
+from agent.manifest import sha256_file, write_manifest
 from scripts.agent_client import decision_request, post_invocation
-from scripts.demo_state import CASE, GENERATED, ROOT, canonical_json, reset_generated
+from scripts.demo_state import (
+    CASE,
+    GENERATED,
+    ROOT,
+    SESSION_ARTIFACTS,
+    canonical_json,
+    reset_generated,
+)
 
 
 COMPOSE = ["docker", "compose", "--file", str(ROOT / "compose.yaml")]
@@ -164,7 +171,7 @@ def verify_docker() -> None:
 
 
 def manifest_paths() -> set[Path]:
-    return set((GENERATED / "manifests").glob("*.json"))
+    return set((SESSION_ARTIFACTS / "manifests").glob("*.json"))
 
 
 def _decision_payload(value: dict[str, Any]) -> dict[str, Any]:
@@ -173,7 +180,7 @@ def _decision_payload(value: dict[str, Any]) -> dict[str, Any]:
 
 def invoke_live(number: int) -> dict[str, Any]:
     before = manifest_paths()
-    status, response, headers = post_invocation(
+    status, response, headers, local_platform_context = post_invocation(
         "http://localhost:8088/invocations"
         "?agent_session_id=SESSION-MODEL-DECISION-DEMO",
         invocation_number=number,
@@ -212,20 +219,33 @@ def invoke_live(number: int) -> dict[str, Any]:
     if response.get("recording_id") != manifest.get("recording_id"):
         raise AssertionError("protocol response did not identify its recording")
 
+    foundry_call_id = local_platform_context["foundry_call_id"]
+    if response.get("foundry_call_id") != foundry_call_id:
+        raise AssertionError("response did not preserve the Foundry call ID")
+    if manifest.get("foundry_call_id") != foundry_call_id:
+        raise AssertionError("manifest did not preserve the Foundry call ID")
+    if manifest.get("user_id") != local_platform_context["user_id"]:
+        raise AssertionError("manifest did not preserve the Foundry user ID")
+    if manifest.get("trace_id") != local_platform_context["trace_id"]:
+        raise AssertionError("manifest trace ID did not continue traceparent")
+    if not manifest.get("span_id"):
+        raise AssertionError("manifest omitted the recording span ID")
+
     normalized_headers = {key.lower(): value for key, value in headers.items()}
-    expected_invocation_id = f"INVOCATION-MODEL-DEMO-{number:02d}"
-    if normalized_headers.get("x-agent-invocation-id") != expected_invocation_id:
-        raise AssertionError(f"Microsoft invocation header was not echoed: {headers}")
-    if response.get("invocation_id") != expected_invocation_id:
-        raise AssertionError("protocol body did not identify its platform invocation")
     if not normalized_headers.get("x-agent-session-id"):
         raise AssertionError(f"Microsoft session header was not returned: {headers}")
+    if response.get("session_id") != normalized_headers["x-agent-session-id"]:
+        raise AssertionError("response and adapter session IDs differ")
+    if manifest.get("session_id") != response.get("session_id"):
+        raise AssertionError("manifest and response session IDs differ")
 
     return {
         "manifest_path": str(manifest_path),
         "manifest": manifest,
         "http_status": status,
-        "protocol_invocation_id": expected_invocation_id,
+        "foundry_call_id": foundry_call_id,
+        "trace_id": manifest["trace_id"],
+        "span_id": manifest["span_id"],
         "protocol_session_id": normalized_headers["x-agent-session-id"],
         **_decision_payload(decision),
         "output": manifest.get("output"),
@@ -409,16 +429,16 @@ def read_telemetry_spans() -> list[dict[str, Any]]:
 
 def verify_failed_invocation_span(failed: dict[str, Any]) -> dict[str, Any]:
     recording_id = str(failed["manifest"]["recording_id"])
-    invocation_id = str(failed["protocol_invocation_id"])
+    trace_id = str(failed["manifest"]["trace_id"])
+    span_id = str(failed["manifest"]["span_id"])
     for span in read_telemetry_spans():
         attributes = span.get("attributes", {})
         if attributes.get("retrace.recording.id") != recording_id:
             continue
-        if (
-            attributes.get("azure.ai.agentserver.invocations.invocation_id")
-            != invocation_id
-        ):
-            raise AssertionError(f"span invocation correlation changed: {span}")
+        if span.get("trace_id") != trace_id or span.get("span_id") != span_id:
+            raise AssertionError(f"span/manifest diagnostic join changed: {span}")
+        if attributes.get("microsoft.foundry.call_id") != failed["foundry_call_id"]:
+            raise AssertionError(f"span Foundry call ID changed: {span}")
         if attributes.get("retrace.model.decision") != failed["decision"]:
             raise AssertionError(f"span model decision changed: {span}")
         if attributes.get("retrace.application.exception.type") != "AttributeError":
@@ -431,6 +451,52 @@ def verify_failed_invocation_span(failed: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def write_selected_proof_manifest(
+    *,
+    failed: dict[str, Any],
+    selected: Path,
+    failed_span: dict[str, Any],
+    model: dict[str, Any],
+) -> Path:
+    manifest = failed["manifest"]
+    proof = {
+        "schema_version": 1,
+        "artifact": {
+            "path": selected.name,
+            "sha256": sha256_file(selected),
+            "original_recording_id": manifest["recording_id"],
+            "original_recording_sha256": manifest["recording_sha256"],
+        },
+        "source": {
+            "git_sha": manifest["source_git_sha"],
+            "worker_sha256": manifest["source_sha256"],
+        },
+        "runtime": {
+            "python": manifest["python_version"],
+            "retracesoftware": manifest["retracesoftware_version"],
+            "retracesoftware_dap": manifest["retracesoftware_dap_version"],
+        },
+        "model": {
+            "name": failed["model"],
+            "digest": model["digest"],
+            "request_sha256": failed["model_request_sha256"],
+            "response_sha256": failed["model_response_sha256"],
+        },
+        "foundry": {
+            "call_id": manifest["foundry_call_id"],
+            "user_id": manifest["user_id"],
+            "session_id": manifest["session_id"],
+        },
+        "telemetry": {
+            "trace_id": failed_span["trace_id"],
+            "span_id": failed_span["span_id"],
+        },
+    }
+    path = GENERATED / "recordings" / "selected-failure.proof.json"
+    write_manifest(path, proof)
+    return path
+
+
 def write_results(
     *,
     model: dict[str, Any],
@@ -440,6 +506,7 @@ def write_results(
     counter_before: int,
     counter_after: int,
     failed_span: dict[str, Any],
+    proof_manifest: Path,
 ) -> None:
     decisions = sorted({str(item["decision"]) for item in live})
     request_hashes = sorted({str(item["model_request_sha256"]) for item in live})
@@ -457,6 +524,7 @@ def write_results(
         "failed_recording_id": failed["manifest"]["recording_id"],
         "selected_recording": str(selected),
         "selected_recording_sha256": sha256_file(selected),
+        "selected_proof_manifest": str(proof_manifest),
         "offline_replays": replay_proof,
         "model_calls_before_replay": counter_before,
         "model_calls_after_replay": counter_after,
@@ -495,16 +563,16 @@ The complete proof passed on Python 3.12.13 with the real local
 - Offline failed replays: {len(replay_proof)} of {REPLAY_COUNT} exact matches
 - Model calls during replay: {counter_after - counter_before}
 - Docker replay network: disabled
-- Exported OTel failed-invocation span correlated to recording: yes
+- OTel trace/span, Foundry call/session, and recording manifest correlated: yes
+- Verifiable recording provenance manifest: `{proof_manifest}`
 - DAP failure stack, scopes, locals and reverse navigation: passed
 
 ## Foundry Trace And Retrace Recording
 
-Microsoft's adapter assigns an invocation ID and session ID and establishes
-the OpenTelemetry request context and exporter. The handler emits an
-invocation span and adds the corresponding `retrace.recording.id`. Foundry
-telemetry identifies which invocation failed; Retrace turns that invocation
-into a deterministic, debuggable artifact.
+Foundry protocol 2.0 supplies request-scoped call, user, and session context.
+The gateway also forwards W3C trace context. The handler records the active
+trace and span IDs with `retrace.recording.id`, producing a direct diagnostic
+join from the platform span to the persisted executable artifact.
 
 ## Live Model Invocations
 
@@ -642,6 +710,12 @@ def main() -> None:
         ]
         verify_secret_boundary(recordings)
         failed_span = verify_failed_invocation_span(failures[0])
+        proof_manifest = write_selected_proof_manifest(
+            failed=failures[0],
+            selected=selected,
+            failed_span=failed_span,
+            model=model,
+        )
         write_results(
             model=model,
             live=live,
@@ -650,6 +724,7 @@ def main() -> None:
             counter_before=counter_before,
             counter_after=counter_after,
             failed_span=failed_span,
+            proof_manifest=proof_manifest,
         )
         if args.archive:
             archive_results(args.archive.resolve())

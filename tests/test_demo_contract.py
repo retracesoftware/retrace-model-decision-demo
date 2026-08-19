@@ -17,7 +17,12 @@ from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
 from scripts.run_demo import DemoPreflightError, verify_docker
-from scripts.verify_dap import dap_value_matches
+from scripts.verify_dap import (
+    SOURCE,
+    configure_to_marker,
+    dap_value_matches,
+    marker_line,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -207,3 +212,47 @@ def test_dap_value_accepts_exact_and_repr_truncated_historical_strings() -> None
 
 def test_dap_value_rejects_a_different_historical_prefix() -> None:
     assert not dap_value_matches("approve_refund", repr("escalate_specialist..."))
+
+
+def test_dap_configuration_stops_at_the_real_breakpoint() -> None:
+    line = marker_line()
+
+    class Client:
+        def __init__(self) -> None:
+            self.actions: list[tuple[str, str]] = []
+
+        def send(self, command: str, arguments: dict | None = None) -> None:
+            self.actions.append(("send", command))
+
+        def response(self, command: str) -> dict:
+            self.actions.append(("response", command))
+            if command == "stackTrace":
+                return {
+                    "body": {
+                        "stackFrames": [
+                            {
+                                "id": 1,
+                                "line": line,
+                                "source": {"path": str(SOURCE)},
+                            }
+                        ]
+                    }
+                }
+            return {}
+
+        def stopped(self, reason: str) -> dict:
+            self.actions.append(("stopped", reason))
+            return {"event": "stopped", "body": {"reason": reason}}
+
+    client = Client()
+
+    frames = configure_to_marker(client, line=line)
+
+    assert frames[0]["line"] == line
+    assert client.actions == [
+        ("send", "configurationDone"),
+        ("response", "configurationDone"),
+        ("stopped", "breakpoint"),
+        ("send", "stackTrace"),
+        ("response", "stackTrace"),
+    ]

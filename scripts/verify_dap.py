@@ -151,6 +151,26 @@ class DAPClient:
             raise AssertionError(f"DAP {command} failed: {message}")
         return message
 
+    def failed_response(
+        self,
+        command: str,
+        *,
+        message_contains: str,
+        timeout: float = 90,
+    ) -> dict[str, Any]:
+        message = self.wait_for(
+            lambda item: item.get("type") == "response"
+            and item.get("command") == command,
+            timeout,
+        )
+        if message.get("success"):
+            raise AssertionError(f"DAP {command} unexpectedly succeeded: {message}")
+        if message_contains not in str(message.get("message", "")):
+            raise AssertionError(
+                f"DAP {command} error omitted {message_contains!r}: {message}"
+            )
+        return message
+
     def stopped(self, reason: str, timeout: float = 90) -> dict[str, Any]:
         message = self.wait_for(
             lambda item: item.get("type") == "event"
@@ -191,24 +211,119 @@ def continue_to_marker(
     raise AssertionError(f"did not reach {SOURCE}:{line}; observed={observed}")
 
 
+def configure_to_marker(
+    client: DAPClient,
+    *,
+    line: int,
+) -> list[dict[str, Any]]:
+    client.send("configurationDone")
+    client.response("configurationDone")
+    client.stopped("breakpoint")
+    client.send("stackTrace", {"threadId": 1})
+    frames = client.response("stackTrace").get("body", {}).get("stackFrames", [])
+    if not any(
+        frame.get("source", {}).get("path") == str(SOURCE)
+        and int(frame.get("line", 0)) == line
+        for frame in frames
+    ):
+        raise AssertionError(
+            f"configuration did not stop at {SOURCE}:{line}; frames={frames}"
+        )
+    return frames
+
+
+def start_session(client: DAPClient, recording: Path) -> dict[str, Any]:
+    client.send(
+        "initialize",
+        {"clientID": "retrace-model-decision-verifier", "adapterID": "retrace"},
+    )
+    capabilities = client.response("initialize").get("body", {})
+    client.send(
+        "launch",
+        {"type": "retrace", "request": "launch", "recording": str(recording)},
+    )
+    client.response("launch")
+    return capabilities
+
+
+def verify_raised_exception(
+    recording: Path,
+    *,
+    line: int,
+    transcript: Path,
+) -> None:
+    pid = int(trace_index(recording)["root"]["pid"])
+    client = DAPClient(recording, pid)
+    try:
+        start_session(client, recording)
+        client.send("setExceptionBreakpoints", {"filters": ["raised"]})
+        client.response("setExceptionBreakpoints")
+        client.send("configurationDone")
+        client.response("configurationDone")
+        client.stopped("exception")
+        client.send("stackTrace", {"threadId": 1})
+        frames = client.response("stackTrace").get("body", {}).get("stackFrames", [])
+        top = frames[0]
+        if (
+            top.get("source", {}).get("path") != str(SOURCE)
+            or int(top.get("line", 0)) != line
+        ):
+            raise AssertionError(f"raised exception stopped at wrong frame: {top}")
+        client.send("exceptionInfo", {"threadId": 1})
+        info = client.response("exceptionInfo").get("body", {})
+        if info.get("exceptionId") != "AttributeError":
+            raise AssertionError(f"wrong raised exception info: {info}")
+        if info.get("breakMode") != "always":
+            raise AssertionError(f"raised exception was mislabeled: {info}")
+    finally:
+        transcript.write_text(json.dumps(client.messages, indent=2) + "\n")
+        client.close()
+
+
+def verify_no_breakpoint_termination(recording: Path, *, transcript: Path) -> None:
+    pid = int(trace_index(recording)["root"]["pid"])
+    client = DAPClient(recording, pid)
+    try:
+        start_session(client, recording)
+        client.send("configurationDone")
+        client.response("configurationDone")
+        event = client.wait_for(
+            lambda item: item.get("type") == "event"
+            and item.get("event") in {"stopped", "terminated"}
+        )
+        if event.get("event") != "terminated":
+            raise AssertionError(
+                f"session without breakpoints emitted an unexpected stop: {event}"
+            )
+    finally:
+        transcript.write_text(json.dumps(client.messages, indent=2) + "\n")
+        client.close()
+
+
 def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
     line = marker_line()
     pid = int(trace_index(recording)["root"]["pid"])
     client = DAPClient(recording, pid)
     try:
-        client.send(
-            "initialize",
-            {"clientID": "retrace-model-decision-verifier", "adapterID": "retrace"},
-        )
-        capabilities = client.response("initialize").get("body", {})
+        capabilities = start_session(client, recording)
         if not capabilities.get("supportsStepBack"):
             raise AssertionError("DAP did not advertise reverse execution")
+        if capabilities.get("supportsSteppingGranularity"):
+            raise AssertionError("DAP advertised unsupported stepping granularity")
+        exception_filters = {
+            item.get("filter")
+            for item in capabilities.get("exceptionBreakpointFilters", [])
+        }
+        if exception_filters != {"raised"}:
+            raise AssertionError(
+                f"DAP advertised inaccurate exception filters: {exception_filters}"
+            )
 
-        client.send(
-            "launch",
-            {"type": "retrace", "request": "launch", "recording": str(recording)},
+        client.send("setExceptionBreakpoints", {"filters": ["uncaught"]})
+        client.failed_response(
+            "setExceptionBreakpoints",
+            message_contains="not supported",
         )
-        client.response("launch")
         client.send(
             "setBreakpoints",
             {
@@ -225,15 +340,30 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
                 f"model-decision breakpoint not verified: {breakpoints}"
             )
 
-        client.send("configurationDone")
-        client.stopped("entry")
-        frames = continue_to_marker(client, line=line)
+        frames = configure_to_marker(client, line=line)
         frame = next(
             item
             for item in frames
             if item.get("source", {}).get("path") == str(SOURCE)
             and int(item.get("line", 0)) == line
         )
+        client.send(
+            "next",
+            {"threadId": 1, "granularity": "instruction"},
+        )
+        client.failed_response("next", message_contains="granularity")
+        client.send("stackTrace", {"threadId": 1})
+        preserved_frames = (
+            client.response("stackTrace").get("body", {}).get("stackFrames", [])
+        )
+        preserved_top = preserved_frames[0]
+        if (
+            preserved_top.get("source", {}).get("path") != str(SOURCE)
+            or int(preserved_top.get("line", 0)) != line
+        ):
+            raise AssertionError(
+                f"unsupported granularity changed the stopped cursor: {preserved_top}"
+            )
         client.send("scopes", {"frameId": int(frame["id"])})
         scopes = client.response("scopes").get("body", {}).get("scopes", [])
         locals_scope = next(
@@ -301,10 +431,25 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
         transcript.write_text(json.dumps(client.messages, indent=2) + "\n")
         client.close()
 
+    verify_raised_exception(
+        recording,
+        line=line,
+        transcript=transcript.with_name(f"{transcript.stem}-raised{transcript.suffix}"),
+    )
+    verify_no_breakpoint_termination(
+        recording,
+        transcript=transcript.with_name(
+            f"{transcript.stem}-no-breakpoint{transcript.suffix}"
+        ),
+    )
+
     print(
         "dap=pass failure=historical model_response=historical "
         "decision=historical serial_number=None stack=pass scopes=pass "
-        "locals=pass step_back=toward-routing forward_return=failure"
+        "locals=pass entry_stop=real granularity_contract=pass "
+        "exception_filter_contract=pass raised_exception=pass "
+        "no_breakpoint_termination=pass step_back=toward-routing "
+        "forward_return=failure"
     )
 
 

@@ -1,4 +1,4 @@
 azure-ai-agentserver-invocations==1.0.0
 pytest==8.4.2
-retracesoftware==0.2.25
+retracesoftware==0.2.26
 ruff==0.12.12

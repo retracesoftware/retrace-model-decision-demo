@@ -3,12 +3,12 @@
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "review_score": 65,
     "decision": "request_more_information",
-    "reason": "The request is a borderline case requiring specialist review. While the damage is partial and the refund amount is reasonable, the unclear serial number and the need for verification of the accessory's regulation status warrant further investigation. The lack of prior refunds and history suggests potential for alternative dispute resolution.",
+    "reason": "The refund request is valid under the self-service window policy. The packaging damage is substantiated by a photo, and the accessory is not safety-critical. The customer has a strong account history with no prior refunds. The partial obscuration of the serial number may affect eligibility, but this does not remove the validity of the claim. A discretionary review is recommended to ensure compliance with all applicable regulations.",
     "model": "qwen3:1.7b",
-    "created_at": "2026-08-13T12:25:42.220569Z",
-    "gateway_response_id": "MODEL-CD9F52D2E7CD",
+    "created_at": "2026-08-18T13:10:33.571848Z",
+    "gateway_response_id": "MODEL-57B64DCF9041",
     "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-    "model_response_sha256": "5e4158b7d345be7ec803ef4f98bc1607e3309ee7112c526ef0da2a70627c3f36"
+    "model_response_sha256": "022d9305d9e7751521cbe88d052f0ffeb54198b06f6ec75eedc351dffa80f45c"
   },
   "failure": {
     "exception_type": "AttributeError",

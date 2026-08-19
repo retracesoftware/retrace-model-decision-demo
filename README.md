@@ -100,8 +100,8 @@ The image is pinned to:
 ```text
 Debian Bookworm, Linux/amd64
 Python 3.12.13
-retracesoftware==0.2.25
-retracesoftware-dap==0.2.25
+retracesoftware==0.2.26
+retracesoftware-dap==0.2.26
 azure-ai-agentserver-invocations==1.0.0
 qwen3:1.7b, pinned digest for live mode
 ```
@@ -214,12 +214,11 @@ This point was chosen because all evidence is present together:
 2. Find the Python process under `selected-failure.retrace`.
 3. Click Play next to that process.
 4. Wait for breakpoint scanning to finish.
-5. Press Continue once after the initial entry state.
-6. Replay stops on `RETRACE_MODEL_FAILURE_BREAKPOINT`.
+5. Replay stops directly on `RETRACE_MODEL_FAILURE_BREAKPOINT`.
 
-An early debug-console message saying there is no active cursor can occur
-before Continue moves replay to the historical breakpoint. The automated DAP
-preflight already verifies that the breakpoint is discoverable.
+The automated DAP preflight verifies that the breakpoint is discoverable and
+that the historical stack, scopes, locals, Step Back, and forward return all
+work before VS Code is opened.
 
 ### 6. Inspect historical runtime state
 

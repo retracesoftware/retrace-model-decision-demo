@@ -94,6 +94,7 @@ jobs:
         run: |
           curl --fail --silent --show-error --location \
             https://ollama.com/install.sh | sh
+          sudo systemctl disable --now ollama || true
           OLLAMA_HOST=0.0.0.0:11434 \
             nohup ollama serve > /tmp/ollama.log 2>&1 &
           for attempt in $(seq 1 60); do
@@ -109,6 +110,10 @@ jobs:
         run: |
           ollama pull qwen3:1.7b
           docker compose --file compose.yaml build
+          docker run --rm --platform linux/amd64 \
+            --add-host host.docker.internal:host-gateway \
+            retrace-model-decision-demo:py312 \
+            curl --fail --silent http://host.docker.internal:11434/api/tags
 
       - name: Run independent real-model proofs
         env:

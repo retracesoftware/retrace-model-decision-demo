@@ -135,6 +135,18 @@ code --install-extension ms-vscode-remote.remote-containers
 
 ## Reliable Presentation Walkthrough
 
+Prepare this workflow before the meeting. Do not build the image or reopen the
+Dev Container while screen sharing. Leave these three views ready:
+
+1. `generated/DEMO_RESULTS.md` at the failed invocation and recording ID.
+2. A terminal showing the verified recording SHA plus the
+   `network=none match=yes` replay lines.
+3. VS Code already connected to the Dev Container, with the historical source
+   and Retrace sidebar open.
+
+The live action is entering the prepared historical execution, inspecting its
+locals, and using Step Back.
+
 ### 1. Prepare and verify the historical failure
 
 Make sure Docker is running, then execute:
@@ -308,6 +320,11 @@ The first run downloads the pinned Qwen model and builds the image. The proof:
 15. verifies DAP historical locals and reverse navigation, and
 16. writes a human-readable report, machine-readable run summary, and
     provenance manifest.
+
+The full proof runs each service at or below 1 CPU and 1 GiB. Offline replay
+is separately constrained to 1 CPU and 768 MiB. CI exercises the actual
+recording, replay, DAP, and shutdown paths under those limits; these are
+correctness/resource-fit checks, not latency benchmarks.
 
 Live sampling is real, so the number of calls varies. The harness allows at
 most 20 identical calls and fails instead of manufacturing a response.

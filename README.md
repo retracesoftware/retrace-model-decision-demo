@@ -444,14 +444,14 @@ The tests cover:
 make run            # fresh model calls, recordings, and offline replay
 make replay-example # verify the bundled recording; no model call
 make presentation   # compatibility alias for make replay-example
-make model         # pull only the pinned Ollama model
-make build         # build the pinned Python 3.12 image
-make demo          # run the live proof without pulling the model first
-make test          # run formatting, lint, and tests in Docker
-make lifecycle     # interrupt an in-flight request and verify durable replay
-make vscode        # prepare the selected failed trace for VS Code
-make logs          # show service logs
-make clean         # remove this demo's generated state and Compose resources
+make model          # pull only the pinned Ollama model
+make build          # build the native Python 3.12 image
+make demo           # run the live proof without pulling the model first
+make test           # run formatting, lint, and tests in Docker
+make lifecycle      # interrupt an in-flight request and verify durable replay
+make vscode         # prepare the selected failed trace for VS Code
+make logs           # show service logs
+make clean          # remove this demo's generated state and Compose resources
 ```
 
 ## Architecture And Presentation Script
@@ -480,6 +480,28 @@ The bundled replay does not require Ollama.
 This is genuine sampling. The proof makes up to 20 identical calls and fails
 without manufacturing a score. Use `make replay-example` to inspect the
 bundled genuine failed invocation without waiting for fresh sampling.
+
+### Docker consumes excessive resources on Apple Silicon
+
+Current versions of the demo use native Linux ARM64 containers. Confirm both
+the Docker engine and demo image report ARM64:
+
+```bash
+docker info --format '{{.Architecture}}'
+docker image inspect retrace-model-decision-demo:py312 \
+  --format '{{.Architecture}}'
+```
+
+Both should print `arm64` or `aarch64`. If an older forced-AMD64 image remains,
+remove only that demo image and rebuild it natively:
+
+```bash
+docker image rm retrace-model-decision-demo:py312
+make build
+```
+
+Do not use `docker system prune --all`; the demo does not require deleting
+unrelated Docker data.
 
 ### VS Code does not stop
 

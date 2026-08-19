@@ -1,0 +1,34 @@
+{
+  "artifact": {
+    "original_recording_id": "decision-8f2ed06c-0ace-4320-bbf4-51a88268670f",
+    "original_recording_sha256": "544f8de637c02c36902cf2925446be256f5e6eecd5d5d0e44c937b2ca0419e96",
+    "path": "selected-failure.retrace",
+    "platform": "linux/arm64",
+    "sha256": "544f8de637c02c36902cf2925446be256f5e6eecd5d5d0e44c937b2ca0419e96"
+  },
+  "foundry": {
+    "call_id": "CALL-MODEL-DEMO-03",
+    "session_id": "SESSION-MODEL-DECISION-DEMO",
+    "user_id": "USER-MODEL-DECISION-DEMO"
+  },
+  "model": {
+    "digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
+    "name": "qwen3:1.7b",
+    "request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
+    "response_sha256": "64c6d4dc8c2fe74bda4a239005b652b4edec668ae8d0316a0f2b8db619278c64"
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "retracesoftware": "0.2.26",
+    "retracesoftware_dap": "0.2.26"
+  },
+  "schema_version": 1,
+  "source": {
+    "git_sha": "6466551ce3afb91000f56326c9900d87beb60149",
+    "worker_sha256": "ed4024a446a9f9e50f8a127c302486a6cc43c2b6918d179f3fbc117f72da7b06"
+  },
+  "telemetry": {
+    "span_id": "80af1a1ed7658281",
+    "trace_id": "946e1ce9f2e316fbfb83faa6519c271a"
+  }
+}

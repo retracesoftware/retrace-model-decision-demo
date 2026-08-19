@@ -22,14 +22,26 @@ def prepare() -> Path | None:
     fallback = fallback_directory / "selected-failure.retrace"
     fallback_expected = fallback_directory / "selected-failure.expected.json"
     fallback_proof = fallback_directory / "selected-failure.proof.json"
-    if not ACTIVE.is_file() and fallback.is_file():
+    active_matches_architecture = False
+    if ACTIVE.is_file() and EXPECTED.is_file() and ACTIVE_PROOF.is_file():
+        try:
+            verify_recording_proof(
+                ACTIVE,
+                ACTIVE_PROOF,
+                expected_platform=f"linux/{architecture}",
+            )
+        except AssertionError as error:
+            print(f"Replacing incompatible selected recording: {error}")
+        else:
+            active_matches_architecture = True
+    if not active_matches_architecture and fallback.is_file():
         ACTIVE.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(fallback, ACTIVE)
         shutil.copy2(fallback_expected, EXPECTED)
         shutil.copy2(fallback_proof, ACTIVE_PROOF)
     if not ACTIVE.is_file():
         print(
-            "No selected failure recording yet. Run `make demo` on the host, "
+            "No selected failure recording yet. Run `make run` on the host, "
             "then reopen the folder in the Dev Container."
         )
         return None

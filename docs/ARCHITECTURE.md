@@ -123,6 +123,23 @@ The model-gateway counter must not change. Replay is not a cached final answer:
 the same Python code runs again and Retrace supplies recorded external behavior
 at the model HTTP boundary.
 
+## Native Architecture Contract
+
+Retrace `0.2.26` and retracesoftware-dap `0.2.26` publish Linux wheels for
+both AMD64 and ARM64. The Docker image therefore builds for the engine's
+native architecture; the demo never forces an AMD64 image on Apple Silicon.
+
+A `.retrace` artifact contains an architecture-specific replay executable.
+The repository consequently stores reviewed examples under:
+
+```text
+example-artifacts/linux-amd64/
+example-artifacts/linux-arm64/
+```
+
+The artifact proof records its platform. Replay and VS Code preparation reject
+an artifact from the wrong architecture and select the native alternative.
+
 ## Current Foundry Context And Telemetry Correlation
 
 The Foundry protocol 2.0 gateway injects `x-agent-foundry-call-id` and
@@ -176,6 +193,7 @@ The selected reviewed artifact has an adjacent provenance manifest containing:
 
 ```text
 selected recording SHA
+recording platform
 original recording ID and SHA
 source git SHA and worker-source SHA
 Python, Retrace, and DAP versions
@@ -185,8 +203,8 @@ Foundry call/user/session context
 OTel trace and span IDs
 ```
 
-Presentation preparation verifies the recording hash before replay or DAP is
-started.
+Bundled replay preparation verifies the recording platform and hash before
+replay or DAP is started.
 
 ## Debugger Contract
 

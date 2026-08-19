@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import platform
 import subprocess
 
 
@@ -20,13 +21,16 @@ def normalize_architecture(value: str) -> str:
 
 
 def docker_architecture() -> str:
-    result = subprocess.run(
-        ["docker", "info", "--format", "{{.Architecture}}"],
-        check=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.Architecture}}"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return normalize_architecture(platform.machine())
     return normalize_architecture(result.stdout)
 
 

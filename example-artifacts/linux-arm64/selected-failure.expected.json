@@ -1,0 +1,21 @@
+{
+  "decision": {
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "review_score": 65,
+    "decision": "request_more_information",
+    "reason": "The request is borderline but meets the criteria for immediate review. The damage is visible in a photo, and the account history is clean with no prior refunds. The accessory is not safety-critical but is associated with regulated equipment, which may require additional consideration.",
+    "model": "qwen3:1.7b",
+    "created_at": "2026-08-19T12:22:35.929913375Z",
+    "gateway_response_id": "MODEL-E00B407072F2",
+    "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
+    "model_response_sha256": "64c6d4dc8c2fe74bda4a239005b652b4edec668ae8d0316a0f2b8db619278c64"
+  },
+  "failure": {
+    "exception_type": "AttributeError",
+    "exception_message": "'NoneType' object has no attribute 'strip'"
+  },
+  "worker_exit_code": 1,
+  "runtime_input": {
+    "serial_number": null
+  }
+}

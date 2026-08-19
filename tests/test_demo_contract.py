@@ -19,6 +19,7 @@ from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
 from scripts.proof_manifest import verify_recording_proof
+from scripts import platforms
 from scripts.platforms import normalize_architecture, reviewed_artifact_directory
 from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import (
@@ -166,6 +167,18 @@ def test_supported_docker_architectures_use_native_reviewed_artifacts() -> None:
     assert reviewed_artifact_directory(ROOT, "arm64") == (
         ROOT / "example-artifacts" / "linux-arm64"
     )
+
+
+def test_container_architecture_falls_back_when_docker_cli_is_absent(
+    monkeypatch,
+) -> None:
+    def missing_docker(*args, **kwargs):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(platforms.subprocess, "run", missing_docker)
+    monkeypatch.setattr(platforms.platform, "machine", lambda: "aarch64")
+
+    assert platforms.docker_architecture() == "arm64"
 
 
 @pytest.mark.parametrize(

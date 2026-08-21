@@ -72,9 +72,7 @@ def caller_line() -> int:
         if CALLER_MARKER in text
     ]
     if len(matches) != 1:
-        raise AssertionError(
-            f"expected one {CALLER_MARKER!r} marker, found {matches}"
-        )
+        raise AssertionError(f"expected one {CALLER_MARKER!r} marker, found {matches}")
     return matches[0]
 
 
@@ -216,10 +214,7 @@ class DAPClient:
         stopped = None
         while time.monotonic() < deadline and (response is None or stopped is None):
             message = self.read(deadline - time.monotonic())
-            if (
-                message.get("type") == "response"
-                and message.get("command") == command
-            ):
+            if message.get("type") == "response" and message.get("command") == command:
                 if not message.get("success"):
                     raise AssertionError(f"DAP {command} failed: {message}")
                 response = message

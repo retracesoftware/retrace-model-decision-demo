@@ -224,8 +224,8 @@ The image is pinned to:
 ```text
 Debian Bookworm, native Linux/AMD64 or Linux/ARM64
 Python 3.12.13
-retracesoftware==0.2.26
-retracesoftware-dap==0.2.26
+retracesoftware==0.2.27
+retracesoftware-dap==0.2.27
 azure-ai-agentserver-invocations==1.0.0
 qwen3:1.7b, pinned digest for live mode
 ```
@@ -356,7 +356,9 @@ The workflow then performs these steps in order:
 10. Runs the DAP verifier against the same recording.
 11. Verifies a real initial source-breakpoint stop, stack, scopes, historical
     locals, raised-exception stopping, Step Back, forward return, clean
-    no-breakpoint termination, and truthful capability handling.
+    no-breakpoint termination, truthful capability handling, and Step Into
+    across the exception unwind without exposing an artificial source-less
+    frame.
 12. Generates `selected-failure.code-workspace` for visual debugging.
 
 The historical worker is expected to exit with code `1` because it reproduces
@@ -491,8 +493,8 @@ This point was chosen because all evidence is present together:
 5. Replay stops directly on `RETRACE_MODEL_FAILURE_BREAKPOINT`.
 
 The automated DAP preflight verifies that the breakpoint is discoverable and
-that the historical stack, scopes, locals, Step Back, and forward return all
-work before VS Code is opened.
+that the historical stack, scopes, locals, Step Back, forward return, and
+exception-unwind Step Into all work before VS Code is opened.
 
 ### Inspect historical runtime state
 
@@ -525,9 +527,16 @@ model result and re-executed historical Python path.
 
 ### Time travel
 
-Use Step Back to move from the failing operation toward score routing. Then
-use Continue or Step Over to move forward to the same failure again. Also show
-Call Stack, Scopes, and Locals.
+Use Step Back once or twice to move from the failing operation toward its
+routing branch. Then use Continue or Step Over to move forward to the same
+failure again. Also show Call Stack, Scopes, and Locals.
+
+To demonstrate the exception-unwind fix, restart the replay at the failure
+breakpoint and select Step Into. Because `serial_number` is `None`, no Python
+child frame can be entered: attribute lookup raises immediately. Retrace skips
+CPython's artificial source-less unwind bytecode and stops at the inspectable
+exception handler in `/app/worker/__main__.py`. Call Stack, Scopes, and Locals
+must remain available after that stop.
 
 The debugger is re-executing the selected historical recording. It does not
 make a new model inference.
@@ -649,7 +658,8 @@ The tests cover:
 - in-flight `SIGTERM` drain and post-shutdown replay,
 - provenance-manifest integrity,
 - reviewed failed-recording offline replay, and
-- DAP stack, scopes, locals, Step Back, and forward return.
+- DAP stack, scopes, locals, Step Back, forward return, and inspectable Step
+  Into across exception unwind.
 
 ## Command Reference
 

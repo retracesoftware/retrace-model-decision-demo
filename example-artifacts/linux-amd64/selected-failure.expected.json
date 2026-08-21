@@ -3,12 +3,12 @@
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "review_score": 65,
     "decision": "request_more_information",
-    "reason": "The request is within the 30-day self-service window, the damage is supported by a photo, and the account history shows no previous issues. However, the partial obscuration of the serial number may limit evidence quality. A specialist review is recommended for thorough evaluation.",
+    "reason": "The claim is borderline but meets the criteria for immediate review. The damage is documented, the account history is clear, and the accessory is not safety-critical. Further assessment is needed to determine the appropriate refund amount and policy compliance.",
     "model": "qwen3:1.7b",
-    "created_at": "2026-08-19T11:36:48.808090901Z",
-    "gateway_response_id": "MODEL-F3FD27F7A521",
+    "created_at": "2026-08-21T09:18:20.750253186Z",
+    "gateway_response_id": "MODEL-AD35D156CA08",
     "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-    "model_response_sha256": "4858983030265402ea871b1e3e5b2495d0d89876d751ddcd860fde80ca6b9a4d"
+    "model_response_sha256": "bb2c6a0efe2e74a21bf5f048a620e7d6bcceaf3f409197102f32a760ee96825f"
   },
   "failure": {
     "exception_type": "AttributeError",

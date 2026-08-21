@@ -35,9 +35,8 @@ number bug becomes observable.
 
 | Run | Score | Model-selected route | Runtime outcome | Response hash | Recording ID |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 60 | `approve_refund` | completed | `1719d2951a293201` | `decision-5e7dc235-7eac-4a97-9fc8-9c82eb4ca3fd` |
-| 2 | 60 | `approve_refund` | completed | `d7899f23adf0a708` | `decision-27b409bf-eb50-4403-b140-050c460741c7` |
-| 3 | 65 | `request_more_information` | failed: AttributeError | `64c6d4dc8c2fe74b` | `decision-8f2ed06c-0ace-4320-bbf4-51a88268670f` |
+| 1 | 60 | `approve_refund` | completed | `04e8c93068effef2` | `decision-a0026a67-dd2a-45f0-a186-c067eb407031` |
+| 2 | 65 | `request_more_information` | failed: AttributeError | `c91597cdf2308130` | `decision-ffba8bf0-6f62-48f9-8229-7c1c2448fe4b` |
 
 ## Failed Invocation Replayed Offline
 
@@ -47,16 +46,16 @@ route, failing line and exception.
 
 | Replay | Score | Route | Exception | Observation hash | Exact match |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 2 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 3 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 4 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 5 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 6 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 7 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 8 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 9 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
-| 10 | 65 | `request_more_information` | `AttributeError` | `5f4eec4532dec316` | yes |
+| 1 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 2 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 3 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 4 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 5 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 6 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 7 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 8 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 9 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
+| 10 | 65 | `request_more_information` | `AttributeError` | `1e5f58df0783c4a3` | yes |
 
 ## Debugger Evidence
 

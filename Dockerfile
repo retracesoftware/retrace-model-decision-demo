@@ -12,8 +12,8 @@ COPY requirements.lock.txt /tmp/requirements.lock.txt
 RUN python -m pip install --requirement /tmp/requirements.lock.txt \
     && python -m pip check \
     && test "$(python -c 'import sys; print(sys.version.split()[0])')" = "3.12.13" \
-    && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware'))")" = "0.2.26" \
-    && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware-dap'))")" = "0.2.26"
+    && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware'))")" = "0.2.27" \
+    && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware-dap'))")" = "0.2.27"
 
 COPY . /app
 WORKDIR /app

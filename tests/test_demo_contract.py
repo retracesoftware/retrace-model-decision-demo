@@ -12,10 +12,15 @@ from agent.invocation_runner import (
     _event,
     _worker_environment,
     _worker_events,
+    session_artifact_root,
 )
+from agent.manifest import write_manifest
 from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
+from scripts.proof_manifest import verify_recording_proof
+from scripts import platforms
+from scripts.platforms import normalize_architecture, reviewed_artifact_directory
 from scripts.run_demo import DemoPreflightError, verify_docker
 from scripts.verify_dap import (
     SOURCE,
@@ -101,10 +106,31 @@ def test_protocol_response_distinguishes_invocation_and_recording_ids(
         manifest_path=tmp_path / "manifest.json",
         recording_path=tmp_path / "recording.retrace",
     )
-    payload = _response_payload(result, platform_invocation_id="INVOCATION-TEST")
+    payload = _response_payload(
+        result,
+        foundry_call_id="CALL-TEST",
+        session_id="SESSION-TEST",
+    )
 
-    assert payload["invocation_id"] == "INVOCATION-TEST"
     assert payload["recording_id"] == "decision-test"
+    assert payload["foundry_call_id"] == "CALL-TEST"
+    assert payload["session_id"] == "SESSION-TEST"
+
+
+def test_session_artifacts_default_to_persistent_home(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("RETRACE_SESSION_ARTIFACT_ROOT", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert session_artifact_root() == tmp_path / "retrace"
+
+
+def test_manifest_publication_is_atomic(tmp_path) -> None:
+    path = tmp_path / "manifests" / "recording.json"
+
+    write_manifest(path, {"recording_id": "decision-test"})
+
+    assert json.loads(path.read_text()) == {"recording_id": "decision-test"}
+    assert not path.with_suffix(".tmp").exists()
 
 
 def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> None:
@@ -126,13 +152,52 @@ def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
     compose = (ROOT / "compose.yaml").read_text()
 
     assert 'user: "${DEMO_UID:-0}:${DEMO_GID:-0}"' in compose
-    assert "HOME: /tmp/retrace-demo-home" in compose
+    assert "HOME: /app/generated/session-home" in compose
+    assert "platform: linux/amd64" not in compose
+
+    devcontainer_compose = (ROOT / ".devcontainer" / "compose.yaml").read_text()
+    assert "platform: linux/amd64" not in devcontainer_compose
 
 
-def test_reviewed_presentation_artifact_is_complete() -> None:
-    artifacts = ROOT / "example-artifacts"
+def test_supported_docker_architectures_use_native_reviewed_artifacts() -> None:
+    assert normalize_architecture("x86_64") == "amd64"
+    assert normalize_architecture("amd64") == "amd64"
+    assert normalize_architecture("aarch64") == "arm64"
+    assert normalize_architecture("arm64") == "arm64"
+    assert reviewed_artifact_directory(ROOT, "arm64") == (
+        ROOT / "example-artifacts" / "linux-arm64"
+    )
+
+
+def test_container_architecture_falls_back_when_docker_cli_is_absent(
+    monkeypatch,
+) -> None:
+    def missing_docker(*args, **kwargs):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(platforms.subprocess, "run", missing_docker)
+    monkeypatch.setattr(platforms.platform, "machine", lambda: "aarch64")
+
+    assert platforms.docker_architecture() == "arm64"
+
+
+@pytest.mark.parametrize(
+    "architecture",
+    tuple(
+        path.name.removeprefix("linux-")
+        for path in sorted((ROOT / "example-artifacts").glob("linux-*"))
+        if path.is_dir()
+    ),
+)
+def test_reviewed_presentation_artifact_is_complete(architecture: str) -> None:
+    artifacts = reviewed_artifact_directory(ROOT, architecture)
     recording = artifacts / "selected-failure.retrace"
     expected = json.loads((artifacts / "selected-failure.expected.json").read_text())
+    proof = verify_recording_proof(
+        recording,
+        artifacts / "selected-failure.proof.json",
+        expected_platform=f"linux/{architecture}",
+    )
 
     assert recording.stat().st_size > 10_000
     assert expected["decision"]["decision"] == "request_more_information"
@@ -142,15 +207,41 @@ def test_reviewed_presentation_artifact_is_complete() -> None:
         "exception_message": "'NoneType' object has no attribute 'strip'",
     }
     assert expected["runtime_input"]["serial_number"] is None
+    assert proof["runtime"] == {
+        "python": "3.12.13",
+        "retracesoftware": "0.2.27",
+        "retracesoftware_dap": "0.2.27",
+    }
+    assert proof["model"]["name"] == "qwen3:1.7b"
+    assert len(proof["telemetry"]["trace_id"]) == 32
+    assert len(proof["telemetry"]["span_id"]) == 16
 
 
 def test_agent_uses_microsoft_invocation_contract() -> None:
     source = (ROOT / "agent" / "main.py").read_text()
 
     assert "InvocationAgentServerHost" in source
+    assert "get_request_context" in source
     assert "@app.invoke_handler" in source
+    assert "@app.shutdown_handler" in source
     assert "retrace.recording.id" in source
     assert "/decisions" not in source
+
+
+def test_local_client_emulates_current_foundry_gateway_context() -> None:
+    source = (ROOT / "scripts" / "agent_client.py").read_text()
+
+    assert "x-agent-foundry-call-id" in source
+    assert "x-agent-user-id" in source
+    assert "traceparent" in source
+    assert "x-agent-invocation-id" not in source
+
+
+def test_python_package_pin_matches_the_built_retrace_release() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text()
+
+    assert '"retracesoftware==0.2.27"' in pyproject
+    assert '"retracesoftware==0.2.25"' not in pyproject
 
 
 def test_otel_collector_decodes_exported_invocation_span() -> None:

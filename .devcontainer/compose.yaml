@@ -1,7 +1,6 @@
 services:
   workspace:
     image: retrace-model-decision-demo:py312
-    platform: linux/amd64
     working_dir: /app
     init: true
     command: ["sleep", "infinity"]

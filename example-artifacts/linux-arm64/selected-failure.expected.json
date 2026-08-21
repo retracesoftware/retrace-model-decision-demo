@@ -1,0 +1,21 @@
+{
+  "decision": {
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "review_score": 65,
+    "decision": "request_more_information",
+    "reason": "The request is for a refund of a damaged accessory, with a photo of the damage and partial obscuration of the serial number. The user has a strong history of good accounting and no prior refunds. The accessory is non-safety-critical but accompanies regulated equipment. A discretionary review score of 65 is assigned due to the partial obscuration of the serial number which may impact verification of the claim, but the overall case is borderline and fit for specialist review.",
+    "model": "qwen3:1.7b",
+    "created_at": "2026-08-21T09:18:26.808748035Z",
+    "gateway_response_id": "MODEL-500DF43338C3",
+    "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
+    "model_response_sha256": "c91597cdf23081308be833cabf5566e1bfea97e0d32a1621566c2811399e095f"
+  },
+  "failure": {
+    "exception_type": "AttributeError",
+    "exception_message": "'NoneType' object has no attribute 'strip'"
+  },
+  "worker_exit_code": 1,
+  "runtime_input": {
+    "serial_number": null
+  }
+}

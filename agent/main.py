@@ -4,7 +4,7 @@ import asyncio
 import os
 from typing import Any
 
-from azure.ai.agentserver.core import flush_spans
+from azure.ai.agentserver.core import flush_spans, get_request_context
 from azure.ai.agentserver.invocations import InvocationAgentServerHost
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
@@ -19,15 +19,24 @@ app = InvocationAgentServerHost()
 tracer = trace.get_tracer("Azure.AI.AgentServer.Invocations")
 
 
+def _otel_ids(span: trace.Span) -> tuple[str | None, str | None]:
+    context = span.get_span_context()
+    if not context.is_valid:
+        return None, None
+    return f"{context.trace_id:032x}", f"{context.span_id:016x}"
+
+
 def _response_payload(
     result: InvocationResult,
     *,
-    platform_invocation_id: str,
+    foundry_call_id: str | None,
+    session_id: str | None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "invocation_id": platform_invocation_id,
         "recording_id": result.recording_id,
         "recording_available": True,
+        "foundry_call_id": foundry_call_id,
+        "session_id": session_id,
         "decision": result.decision,
     }
     if result.succeeded:
@@ -65,19 +74,26 @@ async def invoke(request: Request) -> Response:
 
     agent_name = os.environ.get("FOUNDRY_AGENT_NAME", "retrace-model-decision-demo")
     agent_version = os.environ.get("FOUNDRY_AGENT_VERSION", "1.0")
+    foundry_context = get_request_context()
     with tracer.start_as_current_span(
         f"invoke_agent {agent_name}:{agent_version}"
     ) as span:
+        trace_id, span_id = _otel_ids(span)
         span.set_attribute("gen_ai.system", "azure.ai.agentserver")
         span.set_attribute("gen_ai.operation.name", "invoke_agent")
-        span.set_attribute("gen_ai.response.id", request.state.invocation_id)
-        span.set_attribute("microsoft.session.id", request.state.session_id)
+        if foundry_context.call_id:
+            span.set_attribute("microsoft.foundry.call_id", foundry_context.call_id)
+        if foundry_context.session_id:
+            span.set_attribute("microsoft.session.id", foundry_context.session_id)
         result = await run_recorded_invocation(
             request_payload={**CASE, "user_prompt": user_input},
             request_context={
-                "request_id": request.state.invocation_id,
-                "session_id": request.state.session_id,
-                "user_id": request.state.user_id or None,
+                "foundry_call_id": foundry_context.call_id,
+                "session_id": foundry_context.session_id,
+                "user_id": foundry_context.user_id,
+                "trace_id": trace_id,
+                "span_id": span_id,
+                "protocol_invocation_id": request.state.invocation_id,
             },
             cancellation_signal=asyncio.Event(),
         )
@@ -86,10 +102,16 @@ async def invoke(request: Request) -> Response:
     return JSONResponse(
         _response_payload(
             result,
-            platform_invocation_id=request.state.invocation_id,
+            foundry_call_id=foundry_context.call_id,
+            session_id=foundry_context.session_id,
         ),
         status_code=200 if result.succeeded else 500,
     )
+
+
+@app.shutdown_handler
+async def shutdown() -> None:
+    flush_spans()
 
 
 def main() -> None:

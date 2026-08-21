@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 from pathlib import Path
 import select
 import subprocess
@@ -10,9 +11,13 @@ import time
 from typing import Any, Callable
 
 
-ROOT = Path("/app")
+ROOT = Path(os.environ.get("DEMO_ROOT", "/app"))
 SOURCE = ROOT / "worker" / "decision_agent.py"
+CALLER_SOURCE = ROOT / "worker" / "__main__.py"
+LOCAL_SOURCE = Path(__file__).resolve().parents[1] / "worker" / "decision_agent.py"
+LOCAL_CALLER_SOURCE = Path(__file__).resolve().parents[1] / "worker" / "__main__.py"
 MARKER = "RETRACE_MODEL_FAILURE_BREAKPOINT"
+CALLER_MARKER = "except Exception as error:"
 
 
 def dap_value_matches(expected: str, rendered: str) -> bool:
@@ -48,13 +53,26 @@ def trace_index(recording: Path) -> dict[str, Any]:
 
 
 def marker_line() -> int:
+    source = SOURCE if SOURCE.is_file() else LOCAL_SOURCE
     matches = [
         number
-        for number, text in enumerate(SOURCE.read_text().splitlines(), start=1)
+        for number, text in enumerate(source.read_text().splitlines(), start=1)
         if MARKER in text
     ]
     if len(matches) != 1:
         raise AssertionError(f"expected one {MARKER} marker, found {matches}")
+    return matches[0]
+
+
+def caller_line() -> int:
+    source = CALLER_SOURCE if CALLER_SOURCE.is_file() else LOCAL_CALLER_SOURCE
+    matches = [
+        number
+        for number, text in enumerate(source.read_text().splitlines(), start=1)
+        if CALLER_MARKER in text
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one {CALLER_MARKER!r} marker, found {matches}")
     return matches[0]
 
 
@@ -183,6 +201,42 @@ class DAPClient:
             raise AssertionError(f"expected stopped({reason}), got {message}")
         return message
 
+    def navigate_and_stop(
+        self,
+        command: str,
+        reason: str,
+        *,
+        timeout: float = 90,
+    ) -> dict[str, Any]:
+        self.send(command, {"threadId": 1})
+        deadline = time.monotonic() + timeout
+        response = None
+        stopped = None
+        while time.monotonic() < deadline and (response is None or stopped is None):
+            message = self.read(deadline - time.monotonic())
+            if message.get("type") == "response" and message.get("command") == command:
+                if not message.get("success"):
+                    raise AssertionError(f"DAP {command} failed: {message}")
+                response = message
+            elif message.get("type") == "event" and message.get("event") in {
+                "stopped",
+                "terminated",
+            }:
+                if message.get("event") != "stopped":
+                    raise AssertionError(
+                        f"expected {command} to stop with {reason!r}, got {message}"
+                    )
+                if message.get("body", {}).get("reason") != reason:
+                    raise AssertionError(
+                        f"expected stopped({reason}) after {command}, got {message}"
+                    )
+                stopped = message
+        if response is None or stopped is None:
+            raise TimeoutError(
+                f"incomplete DAP {command} transaction; messages={self.messages!r}"
+            )
+        return stopped
+
 
 def continue_to_marker(
     client: DAPClient,
@@ -295,6 +349,62 @@ def verify_no_breakpoint_termination(recording: Path, *, transcript: Path) -> No
             raise AssertionError(
                 f"session without breakpoints emitted an unexpected stop: {event}"
             )
+    finally:
+        transcript.write_text(json.dumps(client.messages, indent=2) + "\n")
+        client.close()
+
+
+def verify_step_into_exception_unwind(
+    recording: Path,
+    *,
+    line: int,
+    transcript: Path,
+) -> None:
+    pid = int(trace_index(recording)["root"]["pid"])
+    client = DAPClient(recording, pid)
+    try:
+        start_session(client, recording)
+        client.send(
+            "setBreakpoints",
+            {
+                "source": {"name": SOURCE.name, "path": str(SOURCE)},
+                "lines": [line],
+                "breakpoints": [{"line": line}],
+            },
+        )
+        client.response("setBreakpoints")
+        configure_to_marker(client, line=line)
+
+        client.navigate_and_stop("stepIn", "step")
+        client.send("stackTrace", {"threadId": 1})
+        frames = client.response("stackTrace").get("body", {}).get("stackFrames", [])
+        if not frames:
+            raise AssertionError("Step Into exception unwind returned no stack frames")
+        top = frames[0]
+        expected_line = caller_line()
+        if (
+            top.get("source", {}).get("path") != str(CALLER_SOURCE)
+            or int(top.get("line", 0)) != expected_line
+        ):
+            raise AssertionError(
+                "Step Into stopped on an artificial unwind position instead of "
+                f"{CALLER_SOURCE}:{expected_line}: {top}"
+            )
+
+        client.send("scopes", {"frameId": int(top["id"])})
+        scopes = client.response("scopes").get("body", {}).get("scopes", [])
+        locals_scope = next(
+            (scope for scope in scopes if scope.get("name") == "Locals"), None
+        )
+        if not locals_scope or not locals_scope.get("variablesReference"):
+            raise AssertionError(
+                f"Step Into caller frame is not inspectable through scopes: {scopes}"
+            )
+        client.send(
+            "variables",
+            {"variablesReference": int(locals_scope["variablesReference"])},
+        )
+        client.response("variables")
     finally:
         transcript.write_text(json.dumps(client.messages, indent=2) + "\n")
         client.close()
@@ -442,6 +552,13 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
             f"{transcript.stem}-no-breakpoint{transcript.suffix}"
         ),
     )
+    verify_step_into_exception_unwind(
+        recording,
+        line=line,
+        transcript=transcript.with_name(
+            f"{transcript.stem}-step-into-unwind{transcript.suffix}"
+        ),
+    )
 
     print(
         "dap=pass failure=historical model_response=historical "
@@ -449,7 +566,7 @@ def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
         "locals=pass entry_stop=real granularity_contract=pass "
         "exception_filter_contract=pass raised_exception=pass "
         "no_breakpoint_termination=pass step_back=toward-routing "
-        "forward_return=failure"
+        "forward_return=failure step_into_exception_unwind=pass"
     )
 
 

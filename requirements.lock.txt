@@ -255,9 +255,9 @@ requests==2.34.2
     #   requests-oauthlib
 requests-oauthlib==2.0.0
     # via msrest
-retracesoftware==0.2.26
+retracesoftware==0.2.27
     # via -r requirements.txt
-retracesoftware-dap==0.2.26
+retracesoftware-dap==0.2.27
     # via retracesoftware
 ruff==0.12.12
     # via -r requirements.txt

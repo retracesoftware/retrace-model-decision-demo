@@ -1,0 +1,21 @@
+{
+  "decision": {
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "review_score": 65,
+    "decision": "request_more_information",
+    "reason": "The claim is borderline but meets the criteria for immediate review. The damage is documented, the account history is clear, and the accessory is not safety-critical. Further assessment is needed to determine the appropriate refund amount and policy compliance.",
+    "model": "qwen3:1.7b",
+    "created_at": "2026-08-21T09:18:20.750253186Z",
+    "gateway_response_id": "MODEL-AD35D156CA08",
+    "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
+    "model_response_sha256": "bb2c6a0efe2e74a21bf5f048a620e7d6bcceaf3f409197102f32a760ee96825f"
+  },
+  "failure": {
+    "exception_type": "AttributeError",
+    "exception_message": "'NoneType' object has no attribute 'strip'"
+  },
+  "worker_exit_code": 1,
+  "runtime_input": {
+    "serial_number": null
+  }
+}

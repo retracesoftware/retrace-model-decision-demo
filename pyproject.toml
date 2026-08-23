@@ -5,7 +5,7 @@ description = "Record and replay a genuinely nondeterministic AI decision"
 requires-python = "==3.12.*"
 dependencies = [
     "azure-ai-agentserver-invocations==1.0.0",
-    "retracesoftware==0.2.27",
+    "retracesoftware==0.2.28",
 ]
 
 [tool.pytest.ini_options]

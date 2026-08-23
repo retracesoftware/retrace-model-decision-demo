@@ -3,12 +3,12 @@
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "review_score": 65,
     "decision": "request_more_information",
-    "reason": "The request is complex due to the packaging damage and partial serial number obscuration, but the recipient has a strong account history with no prior refunds. A discretionary review score of 65 is assigned as further specialist review may be required for clarification.",
+    "reason": "The claim is legitimate but partially obstructed serial number prevents full validation. The product is non-critical but warrant a specialist review for proper processing.",
     "model": "qwen3:1.7b",
-    "created_at": "2026-08-21T13:29:51.081905552Z",
-    "gateway_response_id": "MODEL-14DEB17A0E93",
+    "created_at": "2026-08-23T18:02:48.022604869Z",
+    "gateway_response_id": "MODEL-37D08C353D03",
     "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-    "model_response_sha256": "f6fdbb7582a741449f38dfd39a8c9b50c7a1d7900e7e350bddf0b2636bc34a13"
+    "model_response_sha256": "508afa238a28061d0348290e1a6f3066e12354c8851fdf66a8884bfced457b2b"
   },
   "failure": {
     "exception_type": "AttributeError",

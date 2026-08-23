@@ -3,12 +3,12 @@
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "review_score": 65,
     "decision": "request_more_information",
-    "reason": "The request is borderline but falls within the self-service window. The photo provides sufficient evidence of damage, and the history is consistent. The accessory is not safety-critical, so a quick refund is appropriate.",
+    "reason": "The claim involves a damaged accessory for a regulated equipment, with a partial obscuration of the serial number. While the damage is verified, the clarity of the serial number could affect the ability to process the refund. However, the claim is straightforward and there are no prior refunds, so a discretionary review is warranted.",
     "model": "qwen3:1.7b",
-    "created_at": "2026-08-21T13:30:01.766333051Z",
-    "gateway_response_id": "MODEL-16C1BAA70EA1",
+    "created_at": "2026-08-23T18:02:46.259449944Z",
+    "gateway_response_id": "MODEL-EBCA32E16AC2",
     "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-    "model_response_sha256": "787b72afb66807b43bb7d7677e78929e72a2d55cca305704cd357fd249a6cb66"
+    "model_response_sha256": "6376bec9c418bb452e03e0695c16ef1a139f3363c0cfadf51ea5a8f35a956564"
   },
   "failure": {
     "exception_type": "AttributeError",

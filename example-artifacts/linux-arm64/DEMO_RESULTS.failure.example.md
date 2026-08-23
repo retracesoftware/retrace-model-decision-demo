@@ -7,7 +7,7 @@ The complete proof passed on Python 3.12.13 with the real local
 
 - Identical live application and model input: yes
 - Identical exact model request hash: `c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76`
-- Distinct live model decisions: `approve_refund`, `request_more_information`
+- Distinct live model decisions: `escalate_specialist`, `request_more_information`
 - Genuine model-selected failure observed: `request_more_information`
 - Preserved exception: `AttributeError: 'NoneType' object has no attribute 'strip'`
 - Every live invocation recorded separately: yes
@@ -35,8 +35,8 @@ number bug becomes observable.
 
 | Run | Score | Model-selected route | Runtime outcome | Response hash | Recording ID |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 50 | `approve_refund` | completed | `a6107a469e29a526` | `decision-b389edab-7abe-4e2a-8bf7-9031ffc84ca0` |
-| 2 | 65 | `request_more_information` | failed: AttributeError | `787b72afb66807b4` | `decision-4ac3b128-da6e-4bf5-b7a1-6f8f8d8cb826` |
+| 1 | 65 | `request_more_information` | failed: AttributeError | `6376bec9c418bb45` | `decision-51e79c39-e3bf-4c7b-98e0-bd4b3011ae0a` |
+| 2 | 85 | `escalate_specialist` | completed | `aa6e60233bbf8169` | `decision-ee2404f9-7f16-4335-9692-70db478a5ae6` |
 
 ## Failed Invocation Replayed Offline
 
@@ -46,16 +46,16 @@ route, failing line and exception.
 
 | Replay | Score | Route | Exception | Observation hash | Exact match |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 2 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 3 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 4 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 5 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 6 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 7 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 8 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 9 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
-| 10 | 65 | `request_more_information` | `AttributeError` | `68d4c8bc299b1a8a` | yes |
+| 1 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 2 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 3 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 4 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 5 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 6 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 7 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 8 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 9 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
+| 10 | 65 | `request_more_information` | `AttributeError` | `368a5eed2c88b48c` | yes |
 
 ## Debugger Evidence
 

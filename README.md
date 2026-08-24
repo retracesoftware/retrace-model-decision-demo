@@ -22,7 +22,7 @@ For a complete technical understanding, read these sections in order:
 
 ## Failure Scenario
 
-Alice asks for a GBP 125 refund for a damaged medical-device accessory. The
+Sofia asks for a GBP 125 refund for a damaged medical-device accessory. The
 case is deliberately borderline:
 
 - it is one day outside the self-service window,

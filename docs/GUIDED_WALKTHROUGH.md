@@ -41,7 +41,7 @@ The fixed customer input lives in `scripts/demo_state.py`:
 CASE = {
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "serial_number": None,
-    "user_prompt": "Alice requests a GBP 125 refund ...",
+    "user_prompt": "Sofia requests a GBP 125 refund ...",
 }
 ```
 

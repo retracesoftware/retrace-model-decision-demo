@@ -405,6 +405,13 @@ with urlopen(request, timeout=timeout) as response:
 The bundled workflow has not started a model gateway. The terminal replay was
 also launched with `--network none`.
 
+From a host terminal, stop the gateway if an earlier Compose or Dev Container
+session started it:
+
+```bash
+docker compose --file compose.yaml stop model-gateway
+```
+
 Start replay. At line `21`:
 
 1. Inspect `url`, `method`, and `payload` in Locals.
@@ -418,8 +425,9 @@ Say:
 
 > This is the external non-deterministic boundary. During recording, `urlopen`
 > contacted the real model gateway and Retrace captured the result. During
-> replay there is no gateway and no network, yet the same call returns the
-> historical response. Python after the boundary then executes normally.
+> interactive replay there is no gateway, yet the same call returns the
+> historical response. Python after the boundary then executes normally. The
+> automated proof separately verifies this path with networking disabled.
 
 Why line 21 matters:
 

@@ -110,8 +110,9 @@ Restart with only line `82` enabled. Step Into
 came from the preserved model response.
 
 Optionally restart with only `worker/http_json.py:21` enabled. Step Over
-`urlopen()`. The response returns while the gateway is stopped and replay has
-no network, proving that Retrace supplies the recorded historical HTTP result.
+`urlopen()`. The response returns while the gateway is stopped, proving that
+Retrace supplies the recorded historical HTTP result. The automated replay and
+DAP proofs perform the same check inside `--network none` containers.
 
 The presentation story is therefore:
 
@@ -125,6 +126,10 @@ The presentation story is therefore:
 
 For the spoken explanation and additional debugger operations, use
 [`docs/GUIDED_WALKTHROUGH.md`](docs/GUIDED_WALKTHROUGH.md).
+
+For the complete team-facing explanation of what changed, what to say, what to
+show, and how to recover during a live call, use
+[`docs/TEAM_DEMO_RUNBOOK.md`](docs/TEAM_DEMO_RUNBOOK.md).
 
 ## Reading Order
 
@@ -841,7 +846,7 @@ deeper questions:
 | What value caused it? | `serial_number=None` in Locals | This proves the concrete historical runtime state, not a source-level guess. |
 | Why did Python execute this branch? | Step Back to the route, or restart at line `83` | `review_score=65` selected `request_more_information`. |
 | Where did score 65 come from? | Step Into line `82` | `parse_model_assessment` reads it from the historical model response. |
-| Is replay asking the model again? | Restart at `http_json.py:21` with no gateway | Step Over returns the recorded HTTP response immediately while replay has no network. |
+| Is replay asking the model again? | Restart at `http_json.py:21` with no gateway | Step Over returns the recorded HTTP response immediately; the automated proof also verifies this under `--network none`. |
 
 The causal chain recovered from the historical execution is:
 
@@ -1085,10 +1090,11 @@ with urlopen(request, timeout=timeout) as response:
 ```
 
 Start replay and Step Over. Execution moves to line `22`, and `response` is
-available even though the model gateway is not running and the replay process
-has no network. Retrace supplied the historical HTTP result recorded at this
-boundary. Step Over again to parse the preserved response and return toward
-`model_client.py` and `decision_agent.py`.
+available even though the model gateway is not running. Retrace supplied the
+historical HTTP result recorded at this boundary. The automated replay and DAP
+proofs verify the same behavior in `--network none` containers. Step Over again
+to parse the preserved response and return toward `model_client.py` and
+`decision_agent.py`.
 
 This is also why `model-gateway` is not part of the worker recording: its exact
 returned behavior has already been captured at the point where the worker

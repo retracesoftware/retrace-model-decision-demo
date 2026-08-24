@@ -37,7 +37,7 @@ def historical_output(expected: dict) -> str:
 
 
 @pytest.mark.parametrize("architecture", ["linux-amd64", "linux-arm64"])
-def test_historical_failure_accepts_the_complete_traceback_story(
+def test_historical_failure_accepts_the_complete_traceback(
     architecture: str,
 ) -> None:
     expected = reviewed_expectation(architecture)
@@ -62,14 +62,14 @@ def test_historical_failure_rejects_a_changed_model_decision() -> None:
         )
 
 
-def test_historical_failure_requires_the_source_breadcrumb() -> None:
+def test_historical_failure_requires_the_source_location() -> None:
     expected = reviewed_expectation()
     output = historical_output(expected).replace(
         '  File "/app/worker/decision_agent.py", line 116, in run_decision_agent\n',
         "",
     )
 
-    with pytest.raises(AssertionError, match="traceback breadcrumb"):
+    with pytest.raises(AssertionError, match="traceback source location"):
         validate_historical_failure(
             output,
             expected["worker_exit_code"],

@@ -71,7 +71,7 @@ def validate_historical_failure(
     missing = [line for line in required_traceback if line not in output]
     if missing:
         raise AssertionError(
-            "historical replay omitted the presentation traceback breadcrumb: "
+            "historical replay omitted the required traceback source location: "
             + ", ".join(repr(line) for line in missing)
         )
 

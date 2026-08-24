@@ -14,7 +14,7 @@ Where did the route input come from?
 How do we know replay did not ask the model again?
 ```
 
-## The Story In Thirty Seconds
+## Incident Summary
 
 Say:
 
@@ -118,10 +118,10 @@ AttributeError: 'NoneType' object has no attribute 'strip'
 
 Say:
 
-> This is our first breadcrumb. We are not guessing where to place a
-> breakpoint. The preserved execution reproduces the incident and tells us
-> that the application failed in `decision_agent.py` at line 116. We will open
-> that exact historical execution and begin there.
+> The preserved execution reproduces the incident and identifies
+> `decision_agent.py` line 116 as the failing source location. We derive the
+> first breakpoint from that runtime evidence and begin the investigation
+> there.
 
 Also point out:
 
@@ -359,7 +359,7 @@ Say:
 > were application code.
 
 This is useful engineering evidence, but it is optional in the main customer
-story.
+investigation.
 
 ## Optional Scene: Raised Exception
 
@@ -369,17 +369,18 @@ story.
 4. Start the recording from the Retrace sidebar.
 5. Expect a stop at the historical `AttributeError` on line `116`.
 
-This shows that Retrace can locate the exception even without a memorized
-source breakpoint.
+This shows that Retrace can locate the exception without requiring a source
+breakpoint to be configured in advance.
 
 ## The Closing Message
 
 Say:
 
 > We started with the same evidence an engineer normally gets: a failed
-> invocation and a traceback. From that breadcrumb, Retrace let us inspect the
-> actual `None` value, move backward to the route selection, recover score 65
-> from the historical model response, and prove that the external HTTP result
+> invocation and a traceback. From that failure location, Retrace let us
+> inspect the actual `None` value, move backward to the route selection,
+> recover score 65 from the historical model response, and prove that the
+> external HTTP result
 > was replayed while the model was unavailable.
 >
 > A normal rerun can ask the model again and change the evidence. Retrace

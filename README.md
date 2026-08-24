@@ -61,7 +61,7 @@ This is runtime comparison, not automatic value provenance. Retrace preserves
 both executable histories so the input, model result, route, and resulting
 behavior can be inspected in their original executions.
 
-### Compare the pair in VS Code
+### Compare the pair side by side in VS Code
 
 After `make compare`, open the repository and reopen it in the Dev Container:
 
@@ -69,35 +69,51 @@ After `make compare`, open the repository and reopen it in the Dev Container:
 code .
 ```
 
-The failed trace is selected by default. To inspect the passing trace first,
-run these commands in the VS Code Dev Container terminal:
+Open a terminal in that Dev Container and run:
 
 ```bash
-python -m scripts.prepare_vscode --recording success
-code --reuse-window /app/generated/recordings/selected-success.code-workspace
+make vscode-pair
 ```
 
-1. Set a breakpoint at `worker/__main__.py:13` and start the Python process
-   from the Retrace sidebar.
-2. Step Over once. The decoded `request` local contains
-   `serial_number=None`; this is where the runtime value enters the recorded
-   application.
-3. Restart with only `worker/decision_agent.py:83` enabled. Step Into
-   `route_review_score` and inspect the passing model score.
-4. Continue to `worker/decision_agent.py:112`. The passing route completes
-   without reading the optional serial number.
+This command verifies both recordings and opens exactly two remote VS Code
+workspaces attached to the same persistent container:
 
-Now switch to the failed trace from the same Dev Container terminal:
+- **PASSING EXECUTION** opens in a new window with a green title bar and loads
+  `selected-success.retrace`.
+- The current window becomes **FAILING EXECUTION**, has a red title bar, and
+  loads `selected-failure.retrace`.
 
-```bash
-python -m scripts.prepare_vscode --recording failure
-code --reuse-window /app/generated/recordings/selected-failure.code-workspace
-```
+Each window has its own Retrace extension host state, launch configuration,
+DAP process, replay process, and control socket. They share the source tree at
+`/app`, but one window cannot change the recording selected by the other. Tile
+the two host windows side by side using the normal operating system window
+controls. Debug controls are independent: press Step Into, Step Over, or Step
+Back once in the PASSING window and once in the FAILING window to compare the
+same stage of each history.
 
-Repeat the input breakpoint at `worker/__main__.py:13`; the request still has
-`serial_number=None`. At `worker/decision_agent.py:83`, however, the preserved
-model score is `65`. It selects `request_more_information`, reaches the read at
-line `115`, and raises `AttributeError` at line `116`.
+The persistent workspace container is limited to two CPUs and 2 GB of memory.
+Both workspaces use Pylance's light mode with indexing disabled, leaving the
+runtime evidence and debugger features available without allowing the paired
+editor setup to consume unbounded Docker resources.
+
+In both windows, set the same breakpoint at `worker/__main__.py:13`, then
+click Play beside the Python process in each Retrace sidebar. Step Over once
+in each window. Both historical `request` locals contain
+`serial_number=None`, proving the application input is the same.
+
+Next, restart both sessions with only `worker/decision_agent.py:83` enabled.
+Step Into `route_review_score` in each window:
+
+- The PASSING window contains the independently sampled score that selected
+  `approve_refund` or `escalate_specialist`. It exits without reading the
+  optional serial number.
+- The FAILING window contains score `65`. It selects
+  `request_more_information`, reads `serial_number` at line `115`, and raises
+  `AttributeError` at line `116`.
+
+Do not run `make replay-pair`, `make clean`, or regenerate the selected
+recordings while either debugger is active. Those commands replace files in
+`generated/`.
 
 The comparison is therefore:
 
@@ -1948,7 +1964,9 @@ the evidence produced by the agent and worker.
 | `scripts/show_success.py` | `make show-success` | Runs one explicit terminal replay of the passing trace, validates its historical decision, output, and zero exit code, and writes the presentation success log. |
 | `scripts/show_failure.py` | `make show-failure` | Runs one explicit terminal replay through the installed `replay` command, prints the complete traceback, validates it against the expected result, and writes the presentation log. |
 | `scripts/verify_dap.py` | Both replay workflows and Dev Container setup | Acts as a DAP client. It launches `retrace-dap`, sends protocol requests, and verifies source breakpoint stops, stack, scopes, locals, raised exceptions, clean termination, Step Back, forward execution, and Step Into across exception unwind. It is verification code, not part of the recorded application. |
-| `scripts/prepare_vscode.py` | `make vscode` and Dev Container `postCreateCommand` | Selects a compatible active or bundled recording, verifies it, extracts it, generates the `.code-workspace`, and runs the DAP preflight before interactive use. |
+| `scripts/prepare_vscode.py` | `make vscode`, `make vscode-success`, and paired workspace preparation | Selects one compatible active or bundled recording, verifies it, extracts it, generates and labels its `.code-workspace`, and runs the DAP preflight before interactive use. |
+| `scripts/prepare_vscode_pair.py` | Dev Container setup and `make vscode-pair` | Prepares both outcome-specific workspaces. With `--open`, it opens PASSING in a new remote window and reloads the current remote window as FAILING. |
+| `scripts/verify_dap_pair.py` | `make verify-vscode-pair` and CI | Launches the passing and failing DAP verifiers concurrently and requires both independent sessions to pass. |
 | `scripts/demo_state.py` | Agent and orchestration code | Defines the fixed input case and generated-directory layout, canonicalizes JSON, and clears/recreates generated output directories. |
 | `scripts/agent_client.py` | `scripts/run_demo.py` | Sends the local Invocations request with call, user, session, and W3C trace context and returns the HTTP response plus platform identifiers. |
 | `scripts/preflight.py` | Make targets | Fails early when Docker is missing, stopped, or unreachable. |
@@ -1966,7 +1984,7 @@ the evidence produced by the agent and worker.
 | `Dockerfile` | Pins Debian Bookworm, Python 3.12.13, Retrace, retrace-dap, and all Python dependencies. Build-time checks fail if the pinned versions are not installed. |
 | `compose.yaml` | Defines the three live services, bind mount, ports, health checks, resource limits, environment, and isolated demo network. |
 | `.devcontainer/compose.yaml` | Adds a persistent `workspace` container using the same image and `/app` bind mount. It does not start a new model inference. |
-| `.devcontainer/devcontainer.json` | Tells VS Code to connect to `workspace`, install the Retrace extension in the remote extension host, select container Python, and run `scripts.prepare_vscode` after creation. |
+| `.devcontainer/devcontainer.json` | Tells VS Code to connect to `workspace`, install the Retrace extension in the remote extension host, select container Python, and prepare both recording workspaces after creation. |
 | `Makefile` | Gives stable operator commands for the Python and Docker workflows described above. |
 
 ### Why the implementation has multiple scripts
@@ -2001,6 +2019,8 @@ and the test harness that verifies the result.
 | `make show-success` | Replays the active passing root process through the installed `replay` CLI without networking, validates its decision/output/exit code, and saves `presentation-success.log`. Run `replay-pair` first. |
 | `make show-failure` | Replays the active failing root process through the installed `replay` CLI without networking, validates the complete traceback, and saves `presentation-traceback.log`. Run `replay-pair` first. |
 | `make presentation` | Compatibility alias for the complete `make investigate` flow. New instructions use the clearer `make investigate` name. |
+| `make vscode-pair` | Run inside the VS Code Dev Container terminal. Re-verifies both selected recordings, prepares clearly labeled workspaces, opens PASSING in a second window, and reloads the current window as FAILING. |
+| `make verify-vscode-pair` | Runs both recording-backed DAP verification clients simultaneously to check that the paired sessions remain independent. |
 
 ### Setup and service control
 

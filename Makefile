@@ -7,7 +7,7 @@ export DEMO_UID
 export DEMO_GID
 export DEMO_SOURCE_GIT_SHA
 
-.PHONY: run investigate compare replay-pair replay-example show-success show-failure presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode vscode-success
+.PHONY: run investigate compare replay-pair replay-example show-success show-failure presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode vscode-success vscode-pair verify-vscode-pair
 
 run: preflight model demo
 
@@ -81,6 +81,12 @@ vscode:
 
 vscode-success:
 	python3 -m scripts.prepare_vscode --recording success
+
+vscode-pair:
+	python3 -m scripts.prepare_vscode_pair --open
+
+verify-vscode-pair:
+	python3 -m scripts.verify_dap_pair
 
 status:
 	$(COMPOSE) ps

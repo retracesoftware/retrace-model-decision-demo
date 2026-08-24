@@ -3,12 +3,12 @@
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "review_score": 65,
     "decision": "request_more_information",
-    "reason": "The claim involves a damaged accessory for a regulated equipment, with a partial obscuration of the serial number. While the damage is verified, the clarity of the serial number could affect the ability to process the refund. However, the claim is straightforward and there are no prior refunds, so a discretionary review is warranted.",
+    "reason": "The request is genuine but requires a specialist review due to the partial obscuration of the serial number and the need for verification of the damage. However, since the issue is relatively simple and the request does not involve policy violations, a discretionary review is appropriate but not mandated. The score is 65.",
     "model": "qwen3:1.7b",
-    "created_at": "2026-08-23T18:02:46.259449944Z",
-    "gateway_response_id": "MODEL-EBCA32E16AC2",
-    "model_request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-    "model_response_sha256": "6376bec9c418bb452e03e0695c16ef1a139f3363c0cfadf51ea5a8f35a956564"
+    "created_at": "2026-08-24T18:35:14.801004396Z",
+    "gateway_response_id": "MODEL-08A8042771DF",
+    "model_request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
+    "model_response_sha256": "19a1d220fc3b477f34184b3eb437b25768bdf2d5254af5967e93cb9cac656af2"
   },
   "failure": {
     "exception_type": "AttributeError",

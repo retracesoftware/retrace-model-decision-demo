@@ -6,7 +6,7 @@ The complete proof passed on Python 3.12.13 with the real local
 `qwen3:1.7b` model and Microsoft's Hosted Agent Invocations adapter.
 
 - Identical live application and model input: yes
-- Identical exact model request hash: `c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76`
+- Identical exact model request hash: `8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b`
 - Distinct live model decisions: `approve_refund`, `request_more_information`
 - Genuine model-selected failure observed: `request_more_information`
 - Preserved exception: `AttributeError: 'NoneType' object has no attribute 'strip'`
@@ -35,9 +35,8 @@ number bug becomes observable.
 
 | Run | Score | Model-selected route | Runtime outcome | Response hash | Recording ID |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 60 | `approve_refund` | completed | `cac50ac0bd72096f` | `decision-843d6775-7a76-4582-8e33-81a9b1b4d238` |
-| 2 | 60 | `approve_refund` | completed | `4191ac763c85eb8c` | `decision-9d813394-9b78-40c3-9409-54af07eaeb87` |
-| 3 | 65 | `request_more_information` | failed: AttributeError | `508afa238a28061d` | `decision-35490091-691b-44c3-b723-c66b02515d62` |
+| 1 | 60 | `approve_refund` | completed | `887e9558880361d0` | `decision-37b40615-7dae-4aae-8058-78c0e59663ec` |
+| 2 | 65 | `request_more_information` | failed: AttributeError | `50c4a7a64b33d953` | `decision-1a62928c-9c6d-4d9c-82ed-e13fb10a40c7` |
 
 ## Failed Invocation Replayed Offline
 
@@ -47,16 +46,16 @@ route, failing line and exception.
 
 | Replay | Score | Route | Exception | Observation hash | Exact match |
 | ---: | ---: | --- | --- | --- | --- |
-| 1 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 2 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 3 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 4 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 5 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 6 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 7 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 8 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 9 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
-| 10 | 65 | `request_more_information` | `AttributeError` | `7d234bb1825dd17b` | yes |
+| 1 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 2 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 3 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 4 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 5 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 6 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 7 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 8 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 9 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
+| 10 | 65 | `request_more_information` | `AttributeError` | `81b1120a940caf39` | yes |
 
 ## Debugger Evidence
 

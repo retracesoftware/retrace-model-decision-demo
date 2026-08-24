@@ -209,8 +209,8 @@ def test_reviewed_presentation_artifact_is_complete(architecture: str) -> None:
     assert expected["runtime_input"]["serial_number"] is None
     assert proof["runtime"] == {
         "python": "3.12.13",
-        "retracesoftware": "0.2.28",
-        "retracesoftware_dap": "0.2.28",
+        "retracesoftware": "0.2.29",
+        "retracesoftware_dap": "0.2.29",
     }
     assert proof["model"]["name"] == "qwen3:1.7b"
     assert len(proof["telemetry"]["trace_id"]) == 32
@@ -240,7 +240,7 @@ def test_local_client_emulates_current_foundry_gateway_context() -> None:
 def test_python_package_pin_matches_the_built_retrace_release() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text()
 
-    assert '"retracesoftware==0.2.28"' in pyproject
+    assert '"retracesoftware==0.2.29"' in pyproject
     assert '"retracesoftware==0.2.25"' not in pyproject
 
 

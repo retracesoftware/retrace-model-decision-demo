@@ -1,34 +1,34 @@
 {
   "artifact": {
-    "original_recording_id": "decision-51e79c39-e3bf-4c7b-98e0-bd4b3011ae0a",
-    "original_recording_sha256": "7217822a514b09fe7297810bdb899a9021a99cb6175b2466421a375b5ebb9aae",
+    "original_recording_id": "decision-582dbd0b-f5f9-4499-aef4-cc5131313592",
+    "original_recording_sha256": "d3dd2e8c473356aa5a401600ed563892ab51e34ee360483c413793908c5e011b",
     "path": "selected-failure.retrace",
     "platform": "linux/arm64",
-    "sha256": "7217822a514b09fe7297810bdb899a9021a99cb6175b2466421a375b5ebb9aae"
+    "sha256": "d3dd2e8c473356aa5a401600ed563892ab51e34ee360483c413793908c5e011b"
   },
   "foundry": {
-    "call_id": "CALL-MODEL-DEMO-01",
+    "call_id": "CALL-MODEL-DEMO-04",
     "session_id": "SESSION-MODEL-DECISION-DEMO",
     "user_id": "USER-MODEL-DECISION-DEMO"
   },
   "model": {
     "digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
     "name": "qwen3:1.7b",
-    "request_sha256": "c6c45a73aa7ae42f60188cdbe69158d83f041d4e65460cbadab379b96a4bbd76",
-    "response_sha256": "6376bec9c418bb452e03e0695c16ef1a139f3363c0cfadf51ea5a8f35a956564"
+    "request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
+    "response_sha256": "19a1d220fc3b477f34184b3eb437b25768bdf2d5254af5967e93cb9cac656af2"
   },
   "runtime": {
     "python": "3.12.13",
-    "retracesoftware": "0.2.28",
-    "retracesoftware_dap": "0.2.28"
+    "retracesoftware": "0.2.29",
+    "retracesoftware_dap": "0.2.29"
   },
   "schema_version": 1,
   "source": {
-    "git_sha": "615fb9afbd00e98814f56ae2d112a51351643437",
+    "git_sha": "f15c699f1a1392184b06ecb763b0898d739b0ff7",
     "worker_sha256": "ed4024a446a9f9e50f8a127c302486a6cc43c2b6918d179f3fbc117f72da7b06"
   },
   "telemetry": {
-    "span_id": "a69e44c426f60bfa",
-    "trace_id": "17fe6f303311c0b164b937e419518c1f"
+    "span_id": "f996de5eefa5e956",
+    "trace_id": "b3d16674e4deb67cf44a00d1e5855cd4"
   }
 }

@@ -1,31 +1,1158 @@
 # Retrace Model-Dependent Failure Demo
 
-This demo shows how Retrace complements agent telemetry by turning one
-historical AI invocation into a deterministic, debuggable Python execution.
+This repository demonstrates deterministic recording, replay, and debugging of
+a Python application whose control flow depends on a sampled model response. A
+later model call may not reproduce the same route, so Retrace preserves the
+specific execution that produced the failure.
 
-A real sampled language model reviews the same borderline refund request on
-every live invocation. Its score selects one of three ordinary Python routes:
+## Quick Presentation Path
+
+Use this section when presenting. The longer sections below explain the
+implementation and provide additional tests.
+
+The repository already contains a genuine failed recording captured during a
+real sampled Qwen invocation. In this workflow, **prepare the incident** means
+selecting the bundled recording for the current Docker architecture, verifying
+it, extracting it, and generating its debugger workspace. It does not create a
+new failure or call Qwen. Ollama is not required for this presentation path.
+
+For a first-time checkout:
+
+```bash
+git clone https://github.com/retracesoftware/retrace-model-decision-demo.git
+cd retrace-model-decision-demo
+code --install-extension ms-vscode-remote.remote-containers
+```
+
+The Retrace VS Code extension is installed automatically inside the Dev
+Container.
+
+### 1. Prepare the recording, replay it, and show the failure
+
+Run every command in this section from the repository root in the same host
+terminal. Do not open VS Code yet:
+
+```bash
+open -a Docker     # start Docker Desktop on macOS
+docker info        # confirm that the Docker daemon is ready
+make investigate  # prepare, verify, replay, and print the traceback
+```
+
+`make investigate` is the complete terminal phase. It runs these operations in
+order in that same terminal:
+
+```text
+make replay-example
+  # select the reviewed recording, verify it, replay it three times offline,
+  # validate DAP, and generate the recording workspace
+
+make show-failure
+  # perform another real network-disabled replay and print the complete
+  # historical Python traceback
+```
+
+The bundled artifact is a genuine recording captured during an earlier fresh
+Qwen invocation. This reliable workflow does not create a replacement model
+response on stage. It replays the execution that actually failed. The separate
+`make run` workflow performs fresh model calls and creates new recordings.
+
+The expected application failure appears in the terminal:
+
+```text
+File "/app/worker/decision_agent.py", line 116, in run_decision_agent
+  normalized = serial_number.strip()
+AttributeError: 'NoneType' object has no attribute 'strip'
+```
+
+The traceback is also saved at:
+
+```bash
+cat generated/replay/presentation-traceback.log
+```
+
+At this point you have completed the first two parts of the story:
+
+```text
+historical failed invocation
+  -> deterministic terminal replay
+  -> real Python traceback identifies decision_agent.py:116
+```
+
+Only after the traceback has appeared, open that same execution in VS Code.
+Run this in the same host terminal:
+
+### 2. Open that same execution in VS Code
+
+```bash
+code .  # open this repository; no second terminal is needed
+```
+
+In VS Code:
+
+1. Open the Command Palette.
+2. Select **Dev Containers: Reopen in Container**.
+3. Wait for the status bar to show **Retrace Model Decision Demo**.
+4. Open `/app/worker/decision_agent.py`.
+5. Set one breakpoint on line `116`, at `serial_number.strip()`.
+6. Click the Retrace icon in the left activity bar.
+7. Click Play beside the Python process under `selected-failure.retrace`.
+8. Wait for replay to stop automatically at line `116`; do not press Continue
+   before the first stop.
+
+Inspect Locals and show:
+
+```text
+serial_number = None
+review_score = 65
+decision_name = "request_more_information"
+```
+
+Terminal replay and VS Code are using the same
+`generated/recordings/selected-failure.retrace` artifact.
+
+### 3. Follow the cause backward
+
+Restart replay with only line `83` enabled. Step Into
+`route_review_score(review_score)` and show:
+
+```text
+65 < 65 -> false
+65 < 70 -> true
+route -> request_more_information
+```
+
+Restart with only line `82` enabled. Step Into
+`parse_model_assessment(raw_model_response)` and show that `review_score=65`
+came from the preserved model response.
+
+Optionally restart with only `worker/http_json.py:21` enabled. Step Over
+`urlopen()`. The response returns while the gateway is stopped, proving that
+Retrace supplies the recorded historical HTTP result. The automated replay and
+DAP proofs perform the same check inside `--network none` containers.
+
+The presentation story is therefore:
+
+```text
+1. Reproduce and show the historical failure.
+2. Use its traceback to choose the first debugger location.
+3. Inspect the exact historical value that caused it.
+4. Follow the route backward to the preserved model response.
+5. Prove the model was not called again during replay.
+```
+
+For the spoken explanation and additional debugger operations, use
+[`docs/GUIDED_WALKTHROUGH.md`](docs/GUIDED_WALKTHROUGH.md).
+
+## Reading Order
+
+The quick path above is sufficient for presenting. For a complete technical
+understanding, read these sections in order:
+
+1. **Failure Scenario** defines the input, model output, route, and exception.
+2. **How The Demo Application Works** follows one request through every
+   application function, from the HTTP endpoint to the model call, route, and
+   exception.
+3. **System Architecture** shows every process, the exact recording boundary,
+   and why the model gateway remains outside the recording.
+4. **Recommended Eight-Minute Presentation** gives the complete terminal and
+   VS Code sequence, including what every step proves.
+5. **Capture And Replay Fresh Model Decisions** explains the live experiment.
+6. **Replay The Bundled Historical Example** explains the deterministic
+   presentation workflow.
+7. **Debug Either Recording In VS Code** provides additional debugger tests.
+8. **How The Make Targets And Python Scripts Fit Together** maps every command
+   to the source code that implements it.
+
+## Failure Scenario
+
+The demo supplies Qwen with a text description of Sofia asking for a GBP 125
+refund for a damaged medical-device accessory. The text describes a
+deliberately borderline case:
+
+- it is one day outside the self-service window,
+- a photo supports the damage,
+- the serial number is obscured and represented in the request as `None`,
+- the customer has a good four-year history, and
+- the accessory accompanies regulated equipment but is not safety-critical.
+
+These statements are **textual prompt content**, not independently loaded case
+records. The demo does not upload a photo, send image bytes or a photo URL, run
+a vision model, query an account-history database, or evaluate a policy engine.
+The word `photo` is part of the sentence Qwen receives. It means "the prompt
+asserts that photo evidence exists," not "the application verified a photo."
+
+The complete application request has only three structured fields:
+
+```python
+{
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "serial_number": None,
+    "user_prompt": "Sofia requests a GBP 125 refund ...",
+}
+```
+
+The scenario details are represented and consumed as follows:
+
+| Scenario detail | Actual representation | Code that consumes it |
+| --- | --- | --- |
+| Day 31 of a 30-day window | Words inside `user_prompt` | Qwen only |
+| Photo supports the damage | Words inside `user_prompt`; no photo is transmitted | Qwen only |
+| Serial number is obscured | Words inside `user_prompt` and structured `serial_number=None` | Qwen sees the words; Python later reads the structured value |
+| Four-year account history | Words inside `user_prompt` | Qwen only |
+| Regulated but non-safety-critical accessory | Words inside `user_prompt` | Qwen only |
+
+Qwen does not receive or emit a full business decision. It receives the system
+instruction plus `user_prompt` and returns exactly two fields:
+
+```json
+{"review_score": 65, "reason": "..."}
+```
+
+Ordinary Python then validates those fields, maps the score to a route, and
+executes that route. Python does not independently recompute the score from the
+five scenario statements. The only case fact directly consumed after model
+inference is `serial_number`, and only the middle route reads it.
+
+A real sampled `qwen3:1.7b` model assigns a discretionary review score. The
+application converts that score into one of three ordinary Python routes:
 
 ```text
 score below 65  -> approve_refund              -> succeeds
-score 65-69     -> request_more_information    -> rare runtime failure
+score 65-69     -> request_more_information    -> needs a serial number
 score 70+       -> escalate_specialist         -> succeeds
 ```
 
-The input has no serial number. That is harmless on the common approval and
-escalation routes. When the model selects `request_more_information`, Python
-tries to normalize the missing value and raises:
+The missing serial number is present as `None` on every invocation, but only
+the middle route reads it. In the preserved incident, Qwen returned score
+`65`. Python selected `request_more_information`, loaded
+`serial_number=None`, and called
+`.strip()` on it:
 
 ```text
 AttributeError: 'NoneType' object has no attribute 'strip'
 ```
 
-The model is not instructed to fail and no response is hardcoded. Sampling
-causes real model responses to vary; deterministic application code maps the
-returned score to the route. Retrace records every worker invocation,
-preserves the failed one, replays it after the model is stopped, and lets VS
-Code inspect the original response, score, route, missing value, and failing
-statement.
+This is a realistic AI-integration failure pattern. The model response is
+valid. The application bug is a route-specific assumption about an optional
+field. A later call with the same request can receive a different sampled
+score, choose a successful route, and make the incident appear to have
+vanished.
+
+## How The Demo Application Works
+
+This section describes the application independently of Retrace. Read it
+before running the commands or setting breakpoints.
+
+### What the application is
+
+The demo is a small model-assisted support-routing service. It accepts a
+customer case, asks a language model for a discretionary review score, validates
+the response, and maps the score to one of three application actions.
+
+It does not transfer money, update an account, or submit a real refund. The
+three actions are represented by returned strings so that the example remains
+small enough to inspect completely during a presentation. The production-like
+part under investigation is the integration pattern:
+
+```text
+unstructured case text
+  -> sampled model result
+  -> strict response validation
+  -> deterministic Python routing
+  -> route-specific application code
+```
+
+The demo is divided into four code areas:
+
+| Area | Files | Role |
+| --- | --- | --- |
+| Incoming agent service | `agent/main.py`, `agent/invocation_runner.py` | Accepts an invocation and launches one isolated application worker. |
+| Recorded application | `worker/` | Calls the model boundary, validates the result, chooses the route, and either returns or fails. This is the code being debugged. |
+| External dependencies | `external_world/` and Ollama | Performs sampled Qwen inference and collects telemetry. These services are outside the worker process. |
+| Demo controller | `scripts/`, `Makefile` | Starts services, sends repeated requests, selects evidence, and verifies claims. This is test and presentation orchestration, not business logic. |
+
+### Complete request lifecycle
+
+One fresh invocation moves through the following code. The numbered steps map
+directly to files and functions that can be opened in the repository.
+
+#### 1. The fixed case is defined
+
+[`scripts/demo_state.py`](scripts/demo_state.py) defines the case used for each
+fresh invocation:
+
+```python
+CASE = {
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "serial_number": None,
+    "user_prompt": "Sofia requests a GBP 125 refund ...",
+}
+```
+
+`case_id` identifies the example. `user_prompt` contains the facts presented
+to Qwen. `serial_number` is structured application data and is deliberately
+`None` because the serial is obscured.
+
+No code derives `serial_number` from the text. No photo is uploaded. The
+structured value and the explanatory prose are both fixed inputs supplied by
+the demo.
+
+#### 2. A client calls the agent endpoint
+
+[`scripts/agent_client.py`](scripts/agent_client.py) sends this HTTP request to
+the local agent service:
+
+```json
+{
+  "input": "Sofia requests a GBP 125 refund ...",
+  "metadata": {
+    "demo_case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "purpose": "retrace-nondeterministic-model-decision"
+  }
+}
+```
+
+The client also sends call, user, and W3C trace-context headers. Those values
+exist to demonstrate correlation between the platform invocation, telemetry,
+and recording. They do not affect the refund route.
+
+#### 3. The agent host constructs the worker request
+
+[`agent/main.py`](agent/main.py) exposes the `/invocations` handler. It checks
+that `input` is non-empty, reads the request context, starts an OpenTelemetry
+span, and combines the incoming text with the fixed structured case:
+
+```python
+request_payload = {
+    **CASE,
+    "user_prompt": user_input,
+}
+```
+
+The resulting worker request is therefore:
+
+```json
+{
+  "case_id": "CASE-MODEL-NONDETERMINISM-001",
+  "serial_number": null,
+  "user_prompt": "Sofia requests a GBP 125 refund ..."
+}
+```
+
+The outer HTTP client does not independently submit a serial-number field;
+the local agent combines the fixed demo case with the received text before
+launching the worker.
+
+#### 4. One isolated worker is launched for this invocation
+
+[`agent/invocation_runner.py`](agent/invocation_runner.py) creates a unique
+recording ID and paths for the recording, manifest, stdout, stderr, and worker
+home. It then launches the application as a subprocess:
+
+```bash
+retracepython \
+  --recording <recording-id>.retrace \
+  -m worker \
+  --request-json '<the three-field worker request>'
+```
+
+This process boundary is where recording begins. The long-lived HTTP host and
+the controller stay outside; the short-lived worker handling one decision is
+inside.
+
+#### 5. The worker enters the business function
+
+[`worker/__main__.py`](worker/__main__.py) decodes `--request-json` and calls:
+
+```python
+result = run_decision_agent(request)
+```
+
+[`worker/decision_agent.py`](worker/decision_agent.py) contains the complete
+application decision path. There is no hidden framework logic between this
+function and the route that fails.
+
+#### 6. Python builds the model request
+
+`model_messages()` creates two messages:
+
+1. A system instruction asks a senior support agent for a discretionary score
+   from 0 to 100. Lower scores mean approve; higher scores mean specialist
+   review. It explicitly says reasonable experts may score the case
+   differently.
+2. A user message contains the fixed case prose.
+
+The application also supplies `DECISION_SCHEMA`, requiring exactly:
+
+```json
+{
+  "review_score": 65,
+  "reason": "a concise customer-facing explanation"
+}
+```
+
+The actual value need not be `65`; it must be an integer from 0 through 100.
+The schema disallows extra fields.
+
+#### 7. The worker calls the model gateway
+
+The call chain is:
+
+```text
+worker/decision_agent.py:request_model_decision()
+  -> worker/model_client.py:request_model_decision()
+  -> worker/http_json.py:request_json()
+  -> urllib.request.urlopen()
+  -> POST http://model-gateway:8091/v1/decision
+```
+
+`worker/http_json.py` is intentionally ordinary application code. It JSON
+encodes a request, calls `urlopen()`, reads the response, and parses JSON.
+
+The separate [`external_world/model_gateway.py`](external_world/model_gateway.py)
+forwards the messages and schema to the local Ollama API using:
+
+```text
+model       = qwen3:1.7b
+temperature = 1.7
+top_p       = 1.0
+top_k       = 100
+seed        = not set
+```
+
+It returns Ollama's response plus a gateway response ID, request hash, provider
+name, and sampling options. A simplified response visible to the worker is:
+
+```json
+{
+  "model": "qwen3:1.7b",
+  "created_at": "...",
+  "gateway_response_id": "MODEL-...",
+  "model_request_sha256": "...",
+  "message": {
+    "role": "assistant",
+    "content": "{\"review_score\":65,\"reason\":\"...\"}"
+  }
+}
+```
+
+This is a real sampled Qwen response during fresh capture. The gateway does not
+choose the Python route and does not inject an exception. It only returns model
+output and provenance fields.
+
+The demo records the response exposed to the application. It does not claim to
+record hidden chain-of-thought or Ollama's internal token-generation process;
+`think` is disabled and the application receives only the score and visible
+reason.
+
+#### 8. Python validates the model output
+
+Back in `run_decision_agent()`, `parse_model_assessment()` verifies that:
+
+- `message` is an object,
+- `message.content` is text,
+- the text is valid JSON,
+- the JSON contains exactly `review_score` and `reason`,
+- `review_score` is an integer from 0 through 100, and
+- `reason` is non-empty.
+
+It returns:
+
+```python
+review_score, decision_reason
+```
+
+For the bundled failed invocation, those historical values are `65` and the
+visible reason preserved in the recording.
+
+#### 9. Deterministic Python selects the route
+
+`route_review_score()` is ordinary deterministic code:
+
+```python
+if review_score < 65:
+    return "approve_refund"
+if review_score < 70:
+    return "request_more_information"
+return "escalate_specialist"
+```
+
+For score `65`:
+
+```text
+65 < 65 -> false
+65 < 70 -> true
+decision_name = "request_more_information"
+```
+
+The model does not return the route name. Python derives it from the returned
+score. This is why stepping into line `83` is useful: it exposes the exact
+transition from model-derived data to application control flow.
+
+#### 10. The application records decision evidence
+
+Before executing the route, the worker constructs `decision_evidence` with:
+
+```text
+review_score
+decision_name
+decision_reason
+model name and response time
+gateway response ID
+model request hash
+model response hash
+```
+
+It prints a `model_decision_selected` JSON event. The invocation runner later
+copies this event into the manifest. This event is application telemetry; it
+does not replace the `.retrace` recording.
+
+#### 11. One of three branches executes
+
+The route code is deliberately small:
+
+```python
+if decision_name == "approve_refund":
+    action_detail = "refund approved from the available evidence"
+elif decision_name == "request_more_information":
+    serial_number = request["serial_number"]
+    normalized = serial_number.strip()
+    action_detail = f"request a clearer image of {normalized}"
+else:
+    action_detail = "send the case to a regulated-equipment specialist"
+```
+
+The first and third branches do not read `serial_number`, so they succeed even
+though it is `None`. The middle branch assumes it is text. In the selected
+historical invocation:
+
+```text
+serial_number = None
+None.strip()
+AttributeError: 'NoneType' object has no attribute 'strip'
+```
+
+The correct production fix would be to define the business behavior for a
+missing serial number and handle it before calling `.strip()`. The demo leaves
+the bug in place because the failed execution is the subject of the
+investigation.
+
+#### 12. The failure returns through the process boundary
+
+`worker/__main__.py` catches the exception long enough to emit a structured
+`application_failure` event, then re-raises it. Re-raising is why normal Python
+prints the full traceback and the worker exits with code `1`.
+
+`agent/invocation_runner.py` captures stdout and stderr, verifies that a
+recording exists, writes the per-invocation manifest, and returns an
+`InvocationResult`. `agent/main.py` converts that result into an HTTP `500`
+response containing the recording ID, model decision, and failure metadata.
+
+On either successful route, the worker instead emits `invocation_completed`,
+exits with code `0`, and the agent returns HTTP `200` with the selected action.
+
+### What varies and what does not
+
+The scenario is useful because the nondeterministic and deterministic parts
+are cleanly separated:
+
+| Property | Fresh invocations | Replay of one recording |
+| --- | --- | --- |
+| Case ID, prompt, and `serial_number=None` | Same | Same |
+| Python parser and routing thresholds | Same | Same |
+| Qwen score and reason | May vary | Exact historical response is restored |
+| Gateway response ID and creation time | May vary | Exact historical values are restored |
+| Selected Python branch | Depends on sampled score | Same historical branch |
+| Failure | Occurs only when score is 65-69 | Reproduces whenever the selected failed recording is replayed |
+
+The latent Python bug is deterministic. Whether a fresh run reaches it is
+model-dependent. That is the debugging problem Retrace solves here: preserving
+the one model response and downstream execution that exposed the bug.
+
+### Source-reading order
+
+To understand the complete program directly in code, read these files in this
+order:
+
+1. [`scripts/demo_state.py`](scripts/demo_state.py): fixed case data.
+2. [`scripts/agent_client.py`](scripts/agent_client.py): incoming HTTP request.
+3. [`agent/main.py`](agent/main.py): request handler and response.
+4. [`agent/invocation_runner.py`](agent/invocation_runner.py): worker launch and
+   recording integration.
+5. [`worker/__main__.py`](worker/__main__.py): worker entry and failure
+   propagation.
+6. [`worker/decision_agent.py`](worker/decision_agent.py): prompt, validation,
+   routing, evidence, and route-specific bug.
+7. [`worker/model_client.py`](worker/model_client.py): gateway request.
+8. [`worker/http_json.py`](worker/http_json.py): recorded HTTP boundary.
+9. [`external_world/model_gateway.py`](external_world/model_gateway.py): real
+   sampled Ollama call during fresh capture.
+
+The model is not instructed to fail, and the failing response is not
+hardcoded. Every fresh invocation sends the same model request, but sampling
+may produce different scores. The bundled recording is one genuine invocation
+in which the returned score naturally selected the buggy middle route.
+
+## System Architecture
+
+The demo separates orchestration, the long-lived agent host, the recorded
+application process, and external services. This separation is important:
+Retrace records the short-lived Python worker that consumes one model response.
+It does not record Docker Compose, the test harness, Ollama, or the long-lived
+agent server.
+
+```text
+Host terminal
+  |
+  | make run
+  v
+scripts/run_demo.py                         orchestration and assertions
+  |
+  | POST /invocations
+  v
+agent/main.py                               long-lived Invocations HTTP host
+  |
+  | run_recorded_invocation(...)
+  v
+agent/invocation_runner.py                  creates one recording per request
+  |
+  | retracepython --recording <id>.retrace
+  |   -m worker --request-json <payload>
+  v
+worker/__main__.py                          recorded application process
+  |
+  v
+worker/decision_agent.py                    application and routing logic
+  |
+  v
+worker/model_client.py
+  |
+  v
+worker/http_json.py                         recorded HTTP boundary
+  |
+  | POST /v1/decision
+  v
+external_world/model_gateway.py             unrecorded external service
+  |
+  v
+Ollama / qwen3:1.7b                         sampled model inference
+```
+
+There are three Compose services during fresh capture:
+
+| Service | Process | Purpose | Recorded by Retrace? |
+| --- | --- | --- | --- |
+| `agent` | `python -m agent.main` | Accepts Invocations requests, creates the OTel span, and launches one worker per request. | No; it launches the separately recorded worker. |
+| `model-gateway` | `python -m external_world.model_gateway` | Calls Ollama and returns a normalized model response. | No; the worker records the exact returned HTTP behavior. |
+| `telemetry-collector` | `python -m external_world.otel_collector` | Receives and stores OTLP spans for correlation checks. | No; it stores correlation telemetry outside the application trace. |
+
+The fourth process, the worker, is a subprocess of `agent`. It is the only
+process recorded by Retrace.
+
+### Why the model gateway is outside the recording
+
+`Recorded by Retrace? No` does **not** mean that the model result is absent
+from the recording. It means that the gateway's own Python instructions are
+not part of this worker recording. The value returned by the gateway is
+captured where it crosses into the recorded worker at
+`worker/http_json.py:21`.
+
+Retrace starts recording at this command:
+
+```bash
+retracepython --recording <recording>.retrace -m worker --request-json <request>
+```
+
+That command defines the recording scope: the worker and any process children
+it launches. Docker Compose starts `model-gateway` independently, so it is an
+external service from the worker's point of view.
+
+The process boundary is deliberate:
+
+| Component | What the selected recording preserves |
+| --- | --- |
+| Recorded worker | Python parsing, validation, routing, local variables, output, exception, and exit code |
+| Worker-to-gateway HTTP call | The request/response behavior observed by the worker, including the exact historical model response |
+| Model gateway internals | Not executed during worker replay |
+| Ollama inference internals | Not executed during worker replay |
+
+This is why the worker can replay with `--network none`. Python reaches the
+same `urlopen()` call, but Retrace supplies the recorded response instead of
+requiring the gateway or Qwen. The replay then re-executes the parser and route
+that produced the application failure.
+
+Recording the gateway instead would answer a different question: what happened
+inside the gateway while it normalized and forwarded a provider request. It
+would produce a separate gateway-process recording and would not, by itself,
+contain the worker's downstream routing and `serial_number.strip()` failure.
+The gateway could be recorded separately when investigating gateway code, but
+the correct target for this incident is the worker that consumed the model
+response and failed.
+
+This selective boundary is a core Retrace capability. Reproducing the worker
+does not require reproducing the entire distributed system; it requires the
+worker's Python execution plus the exact external behavior that the worker
+observed.
+
+### Where Retrace is integrated
+
+The integration is in `agent/invocation_runner.py`. For each incoming agent
+request it executes the equivalent of:
+
+```bash
+retracepython \
+  --recording /app/generated/session-home/retrace/recordings/<recording-id>.retrace \
+  -m worker \
+  --request-json '<canonical request JSON>'
+```
+
+This is the normal Retrace recording interface. No demo-specific recording API
+is used. `retracepython` starts the worker under Retrace, the worker executes
+ordinary Python, and the resulting `.retrace` file is persisted when the
+worker exits.
+
+The worker receives a deliberately restricted environment containing only the
+Python path, locale, recording ID, isolated home directory, and model-gateway
+URL. Parent-process telemetry configuration and the canary parent secret are
+not copied into the recorded process.
+
+### What Retrace records in this demo
+
+The application builds a normal `urllib.request.Request` and executes
+`urlopen()` in `worker/http_json.py`. During recording:
+
+1. The worker makes the real HTTP request.
+2. The model gateway makes the real Qwen inference.
+3. The HTTP response crosses Retrace's external-call boundary.
+4. Retrace writes the response and the ordering information needed to replay
+   that boundary into the recording.
+5. Python parses the response, selects a route, and either returns or fails.
+
+Retrace records boundary behavior rather than taking a memory snapshot of the
+entire process. During replay the Python code executes again, but the external
+HTTP operation receives the recorded result. The model gateway and Ollama are
+not required.
+
+### Recording and replay data flow
+
+Fresh capture:
+
+```text
+real Qwen response
+  -> recorded HTTP result
+  -> Python parser and route execute
+  -> structured decision/failure events
+  -> .retrace recording
+  -> per-invocation manifest
+```
+
+Offline replay:
+
+```text
+selected-failure.retrace
+  -> extract recording process tree
+  -> selected-failure.d/<root-pid>.bin
+  -> run recorded root process with --network none
+  -> Retrace supplies historical HTTP response
+  -> same parser, score, route, locals, traceback, and exit code
+```
+
+DAP debugging:
+
+```text
+VS Code Retrace extension
+  -> retrace-dap Go adapter
+  -> starts the extracted replay process
+  -> scans the historical execution for requested breakpoints
+  -> drives the replay cursor
+  -> asks the Python control runtime for stack, scopes, and variables
+```
+
+The generated `.code-workspace` identifies the extracted process tree for the
+extension. The extension and DAP adapter do not debug a new model invocation;
+they control replay of the selected recording.
+
+## Requirements
+
+For the bundled replay and VS Code investigation:
+
+- Git
+- Docker Desktop or Docker Engine with Docker Compose
+- VS Code
+- the VS Code Dev Containers extension
+
+For fresh model capture, also install [Ollama](https://ollama.com/).
+
+The container image is pinned to:
+
+```text
+Debian Bookworm, native Linux/AMD64 or Linux/ARM64
+Python 3.12.13
+retracesoftware==0.2.29
+retracesoftware-dap==0.2.29
+azure-ai-agentserver-invocations==1.0.0
+qwen3:1.7b, pinned digest for live mode
+```
+
+Python, Retrace, the DAP adapter, and the agent adapter run inside Docker. They
+do not need to be installed on the host.
+
+## Get The Demo
+
+```bash
+git clone https://github.com/retracesoftware/retrace-model-decision-demo.git
+cd retrace-model-decision-demo
+```
+
+Install the Dev Containers extension if needed:
+
+```bash
+code --install-extension ms-vscode-remote.remote-containers
+```
+
+## Failure-Driven Investigation
+
+The recommended demo does not begin with an unexplained breakpoint. It begins
+with the application evidence an engineer would actually receive: a traceback.
+
+On a clean checkout, use one host terminal and run:
+
+```bash
+make investigate  # prepare, verify, replay, and print the traceback
+```
+
+This command first runs `make replay-example` to prepare and verify the bundled
+recording. It then runs `make show-failure` to replay the selected worker with
+Docker networking disabled and print the original decision event, failure
+event, and Python traceback.
+
+The two lower-level commands can also be run explicitly for engineering work,
+but the presentation uses `make investigate` so the traceback appears during
+the first terminal flow:
+
+```bash
+make replay-example
+make show-failure
+```
+
+Do not run `make show-failure` first on a clean checkout; it expects
+`make replay-example` to have created the active extracted recording under
+`generated/recordings/`. After preparation, `make show-failure` can be repeated
+whenever the traceback needs to be shown again.
+
+The important traceback tail is:
+
+```text
+File "/app/worker/__main__.py", line 15, in main
+  result = run_decision_agent(request)
+File "/app/worker/decision_agent.py", line 116, in run_decision_agent
+  normalized = serial_number.strip()
+AttributeError: 'NoneType' object has no attribute 'strip'
+```
+
+The traceback identifies `worker/decision_agent.py` line `116` as the first
+source location to inspect. From there, the debugger answers progressively
+deeper questions:
+
+| Investigation question | Evidence to show | Why this point matters |
+| --- | --- | --- |
+| Where did the incident fail? | `decision_agent.py:116` | This is the exact operation named by the traceback. |
+| What value caused it? | `serial_number=None` in Locals | This proves the concrete historical runtime state, not a source-level guess. |
+| Why did Python execute this branch? | Step Back to the route, or restart at line `83` | `review_score=65` selected `request_more_information`. |
+| Where did score 65 come from? | Step Into line `82` | `parse_model_assessment` reads it from the historical model response. |
+| Is replay asking the model again? | Restart at `http_json.py:21` with no gateway | Step Over returns the recorded HTTP response immediately; the automated proof also verifies this under `--network none`. |
+
+The causal chain recovered from the historical execution is:
+
+```text
+recorded Qwen response
+  -> review_score = 65
+  -> decision_name = request_more_information
+  -> serial_number = None
+  -> None.strip()
+  -> AttributeError
+```
+
+This is the capability under test. Static analysis can warn that `.strip()` may
+receive `None`. Logs may show that the request failed. A normal rerun may choose
+a different model route. Retrace lets the engineer re-enter the exact failed
+execution, inspect the original model-derived state, and move backward through
+the Python decisions that connected the model response to the exception.
+
+## Recommended Eight-Minute Presentation
+
+This is the complete bundled-recording presentation path. It does not call
+Qwen or create a replacement recording. It verifies and opens one genuine
+failed recording previously captured by the fresh workflow.
+
+### 0. Explain the program before running it
+
+Show [`worker/decision_agent.py`](worker/decision_agent.py) and summarize the
+application in this order:
+
+```text
+The same borderline support case is sent to Qwen.
+Qwen returns only a sampled score and visible reason.
+Python validates the response and maps the score to an action.
+Only the 65-69 action reads the optional serial number.
+The preserved invocation scored 65 and called .strip() on None.
+```
+
+Then show the three route branches at lines `112-119`. Explain that no real
+refund is executed: these branches return action descriptions. The model does
+not throw the exception and is not prompted to fail. It returns a valid score;
+the application exposes its own latent assumption only on the selected middle
+route.
+
+This gives the audience the program, variable, route, and failure model before
+any tooling appears. The remaining steps show how the historical execution is
+reproduced and investigated.
+
+### 1. Start Docker and confirm it is available
+
+From the repository root in one host terminal:
+
+```bash
+open -a Docker  # start Docker Desktop on macOS
+docker info     # verify that Docker is ready before building or replaying
+```
+
+This confirms the execution environment needed for the pinned Linux Python
+runtime, replay binary, and Dev Container. Start Docker Desktop first if this
+command fails.
+
+### 2. Prepare and replay the historical incident
+
+```bash
+make investigate  # prepare the recording, prove replay/DAP, and print traceback
+```
+
+This target is a readable wrapper around two operations:
+
+```text
+make investigate
+  -> make replay-example
+  -> make show-failure
+```
+
+`make replay-example` performs the preparation and automated proof:
+
+1. builds the pinned Python 3.12 image for Docker's native architecture,
+2. selects the matching reviewed AMD64 or ARM64 recording,
+3. verifies its SHA-256 and provenance manifest,
+4. copies it to `generated/recordings/selected-failure.retrace`,
+5. extracts its recorded process tree into `selected-failure.d/`,
+6. replays the root process three times with `--network none`,
+7. requires the same score, route, exception, traceback location, and exit code,
+8. runs the automated DAP stack, scopes, locals, stepping, and exception tests,
+9. generates `selected-failure.code-workspace` for VS Code.
+
+`make show-failure` then uses the installed `replay` command against the
+extracted root process in one additional `--network none` container. It prints
+the original application output and complete Python traceback. The replayed
+application exits with code `1`; the outer script exits successfully only when
+that failure matches the reviewed expectation.
+
+The engineering chain is therefore:
+
+```text
+reviewed selected-failure.retrace
+  -> proof and architecture verification
+  -> extracted selected-failure.d/<root-pid>.bin
+  -> terminal replay prints the historical traceback
+  -> the same selected-failure.retrace is opened by retrace-dap in VS Code
+```
+
+No step silently swaps to another execution. Terminal replay and VS Code use
+the same selected recording.
+
+### 3. Show the traceback
+
+`make investigate` prints the traceback directly in the terminal between:
+
+```text
+--- historical application output and traceback ---
+...
+--- end historical application output ---
+```
+
+The important tail is:
+
+```text
+File "/app/worker/__main__.py", line 15, in main
+  result = run_decision_agent(request)
+File "/app/worker/decision_agent.py", line 116, in run_decision_agent
+  normalized = serial_number.strip()
+AttributeError: 'NoneType' object has no attribute 'strip'
+```
+
+If the terminal has scrolled past it, display the saved output without
+rerunning preparation:
+
+```bash
+cat generated/replay/presentation-traceback.log
+```
+
+To execute and verify the traceback replay again, run:
+
+```bash
+make show-failure
+```
+
+Explain the starting point:
+
+> We have an agent invocation that failed only on one model-selected route.
+> Rerunning the request may change the model decision, so instead of replacing
+> the evidence, we are reopening the execution that actually failed. The
+> traceback points us to `decision_agent.py:116`; that is where we begin.
+
+### 4. Open the same recording in VS Code
+
+After the traceback has been shown, stay in the same host terminal and run:
+
+```bash
+code .  # open the repository that contains the selected recording
+```
+
+Open the Command Palette and select **Dev Containers: Reopen in Container**.
+Wait until the status bar identifies **Retrace Model Decision Demo**.
+
+VS Code remains a host application, but its workspace extension, Python
+runtime, source, recording, replay binary, and DAP adapter now run inside the
+container at `/app`. The Dev Container's `postCreateCommand` verifies the
+active `selected-failure.retrace`, extracts it, regenerates its workspace, and
+runs the DAP preflight. It does not call the model or create a new recording.
+
+### 5. Stop at the operation identified by the traceback
+
+Open:
+
+```text
+/app/worker/decision_agent.py
+```
+
+Set the only source breakpoint on line `116`:
+
+```python
+normalized = serial_number.strip()  # RETRACE_MODEL_FAILURE_BREAKPOINT
+```
+
+Then:
+
+1. click the Retrace icon in the left activity bar,
+2. find the Python process under `selected-failure.retrace`,
+3. click Play beside that process,
+4. wait for `breakpoint scan ... complete`, and
+5. let replay stop automatically on line `116`.
+
+Do not press Continue before the first stop. With one breakpoint hit, Continue
+means continue beyond that hit and can terminate the replay.
+
+Open **Run and Debug**, then inspect Locals:
+
+```text
+serial_number = None
+review_score = 65
+decision_name = "request_more_information"
+model_name = "qwen3:1.7b"
+raw_model_response = {...}
+```
+
+This stop answers two questions. The traceback showed **where** the incident
+failed. Historical Locals now show **what concrete value** caused it and retain
+the model-derived route information in the same frame.
+
+### 6. Prove why the failing route executed
+
+Stop the current debug session. Remove or disable line `116`, then leave only a
+breakpoint on line `83`:
+
+```python
+decision_name = route_review_score(review_score)
+```
+
+Start replay again from the Retrace sidebar. When it stops, select **Step
+Into** to enter `route_review_score`. Step Over its two comparisons:
+
+```text
+review_score = 65
+65 < 65 -> false
+65 < 70 -> true
+route -> request_more_information
+```
+
+This proves that the failing branch was selected by the historical model score
+rather than by a hardcoded failure switch.
+
+### 7. Prove where score 65 came from
+
+Stop the session, remove or disable line `83`, and leave only line `82`:
+
+```python
+review_score, decision_reason = parse_model_assessment(raw_model_response)
+```
+
+Start replay and Step Into `parse_model_assessment`. Step Over the validation
+and JSON parsing code. Inspect `content`, `assessment`, `review_score`, and
+`decision_reason`. This shows that score `65` was parsed from the preserved raw
+model response before Python selected a route.
+
+### 8. Prove that replay does not call the model
+
+Stop the session and remove or disable the previous breakpoint. Open
+`/app/worker/http_json.py` and set the only breakpoint on line `21`:
+
+```python
+with urlopen(request, timeout=timeout) as response:
+```
+
+Start replay and Step Over. Execution moves to line `22`, and `response` is
+available even though the model gateway is not running. Retrace supplied the
+historical HTTP result recorded at this boundary. The automated replay and DAP
+proofs verify the same behavior in `--network none` containers. Step Over again
+to parse the preserved response and return toward `model_client.py` and
+`decision_agent.py`.
+
+This is also why `model-gateway` is not part of the worker recording: its exact
+returned behavior has already been captured at the point where the worker
+observed it.
+
+### 9. Demonstrate reverse execution
+
+Restart with only line `116` enabled. After the automatic stop:
+
+1. Step Back to the line `115` serial-number assignment.
+2. Continue backward toward the branch and decision-evidence construction.
+3. Watch locals disappear when the cursor moves before their assignments.
+4. Step Over forward and watch the same historical values reappear.
+
+Python bytecode for calls and multiline expressions does not always map to
+numerically descending source lines. Judge reverse movement by the earlier
+execution state and temporal locals, not by line-number arithmetic alone.
+
+### 10. Close the investigation
+
+The demonstrated chain is:
+
+```text
+recorded Qwen response
+  -> review_score = 65
+  -> request_more_information
+  -> serial_number = None
+  -> None.strip()
+  -> AttributeError
+```
+
+Close with:
+
+> The value is not merely that the model can vary. The value is that one
+> production outcome can depend on one historical model response. Retrace
+> preserves that response together with the Python execution that consumed it,
+> then makes the execution reproducible and debuggable after the live model is
+> gone.
+
+The full spoken script and precise VS Code actions are in
+[`docs/GUIDED_WALKTHROUGH.md`](docs/GUIDED_WALKTHROUGH.md).
 
 ## The Core Message
 
@@ -61,91 +1188,6 @@ The exact positioning is:
 
 > Foundry tells you which agent invocation failed. Retrace lets you re-enter
 > that exact historical Python execution and debug why.
-
-## What You Can Run
-
-The repository provides two independent workflows.
-
-### Capture fresh model invocations
-
-```bash
-make run
-```
-
-This is the complete record-and-replay proof. It makes fresh calls to a real
-Qwen model and creates new Retrace recordings on your machine. The same model
-request is repeated until sampling produces at least two application decisions,
-including one successful invocation and the rare failing route. The harness
-then stops the model gateway and replays the newly recorded failure ten times
-with Docker networking disabled.
-
-This workflow proves that Retrace can capture a model-dependent execution as it
-happens and reproduce it after the model is unavailable.
-
-### Replay a bundled verified recording
-
-```bash
-make replay-example
-```
-
-This does **not** make a new model call or create a new recording. It uses a
-small, reviewed `.retrace` artifact previously produced by `make run` from a
-real Qwen invocation. It verifies the artifact's SHA-256 provenance manifest,
-replays the failure three times with networking disabled, exercises the DAP
-server, and creates the VS Code workspace.
-
-The bundled recording provides a quick way to inspect a known historical
-execution. It complements rather than replaces the fresh-capture workflow.
-Reviewed recordings are supplied separately for Linux AMD64 and Linux ARM64,
-and the demo automatically selects the one matching Docker's native
-architecture.
-
-## How The Repository Is Assembled
-
-The demo has four cooperating parts:
-
-```text
-agent/
-  Microsoft Invocations host, request context, telemetry, and worker launch
-
-external_world/
-  model gateway and local OTLP collector used during fresh capture
-
-worker/
-  ordinary single-invocation Python application recorded by Retrace
-
-scripts/
-  orchestration, verification, replay, DAP, and artifact-provenance checks
-```
-
-During fresh capture, the long-lived host is not recorded. It launches one
-sanitized `retracepython` worker for each invocation. That worker makes the
-model-boundary request, parses the returned score, chooses the application
-route, and either succeeds or reaches the missing-serial-number failure.
-
-```text
-identical request
-  -> Invocations host
-  -> one Retrace worker
-  -> model gateway
-  -> real sampled Qwen response
-  -> deterministic Python routing
-  -> one .retrace recording
-```
-
-During replay, only the recorded worker is re-executed. The model gateway is
-unavailable and Docker networking is disabled. Retrace supplies the historical
-model-boundary result from the recording, so the ordinary Python code selects
-the same route and reaches the same result.
-
-```text
-.retrace recording
-  -> extracted root-process replay binary
-  -> historical model response supplied by Retrace
-  -> same Python route
-  -> same exception and exit code
-  -> DAP inspection of stack, scopes, and locals
-```
 
 ## What Is Bundled
 
@@ -208,44 +1250,6 @@ platform, and expected exception before copying anything under
 `example-artifacts/`. The public bundled workflow repeats those checks every
 time it runs.
 
-## Requirements
-
-For the bundled replay:
-
-- Git
-- Docker Desktop or Docker Engine with Docker Compose
-- VS Code
-- the VS Code Dev Containers extension
-
-For fresh capture, also install [Ollama](https://ollama.com/).
-
-The image is pinned to:
-
-```text
-Debian Bookworm, native Linux/AMD64 or Linux/ARM64
-Python 3.12.13
-retracesoftware==0.2.28
-retracesoftware-dap==0.2.28
-azure-ai-agentserver-invocations==1.0.0
-qwen3:1.7b, pinned digest for live mode
-```
-
-Python, Retrace, and the Microsoft adapter run inside Docker. They do not need
-to be installed on the host.
-
-## Get The Demo
-
-```bash
-git clone https://github.com/retracesoftware/retrace-model-decision-demo.git
-cd retrace-model-decision-demo
-```
-
-Install the Dev Containers extension if needed:
-
-```bash
-code --install-extension ms-vscode-remote.remote-containers
-```
-
 ## Capture And Replay Fresh Model Decisions
 
 Start Ollama:
@@ -298,7 +1302,7 @@ generated/recordings/selected-failure.retrace
 
 ## Replay The Bundled Historical Example
 
-To exercise replay and DAP without calling the model:
+To prepare and verify replay and DAP without calling the model:
 
 ```bash
 make replay-example
@@ -323,6 +1327,28 @@ The command verifies that the bundled recording matches its provenance
 manifest before executing it. The recording contains a genuine historical
 model response; replay supplies that recorded response rather than contacting
 Qwen.
+
+To run the selected process once more and display its complete application
+traceback:
+
+```bash
+make show-failure
+```
+
+`show-failure` invokes the installed `replay` CLI against the extracted root
+process inside a fresh `--network none` container. It prints the real replay
+output, verifies the model decision and exception against
+`selected-failure.expected.json`, and writes the same output to:
+
+```text
+generated/replay/presentation-traceback.log
+```
+
+To perform both operations with one command:
+
+```bash
+make investigate
+```
 
 ### What `make replay-example` does
 
@@ -389,6 +1415,7 @@ generated/recordings/selected-failure.d/<root-pid>.bin
 generated/replay/replay-01.log
 generated/replay/replay-02.log
 generated/replay/replay-03.log
+generated/replay/presentation-traceback.log  # after make show-failure
 generated/transcripts/dap.json
 generated/transcripts/dap-raised.json
 generated/transcripts/dap-no-breakpoint.json
@@ -433,7 +1460,7 @@ All verification completed and the recording is ready for VS Code.
 
 ## Debug Either Recording In VS Code
 
-After `make run` or `make replay-example`, open the repository:
+After `make run` or `make investigate`, open the repository:
 
 ```bash
 code .
@@ -459,6 +1486,19 @@ The Dev Container automatically:
 - generates its `.code-workspace`, and
 - runs the automated DAP preflight.
 
+### Start At The Traceback Location
+
+If you used `make investigate`, the terminal has just shown:
+
+```text
+File "/app/worker/decision_agent.py", line 116, in run_decision_agent
+  normalized = serial_number.strip()
+AttributeError: 'NoneType' object has no attribute 'strip'
+```
+
+That evidence identifies the source file and line to inspect. The first
+breakpoint is therefore derived from the observed runtime failure.
+
 ### Set the failure breakpoint
 
 Open:
@@ -483,6 +1523,10 @@ This point was chosen because all evidence is present together:
 - provider metadata and hashes,
 - the runtime `serial_number=None`, and
 - the exact operation that fails.
+
+The first stop answers **what failed and with which value**. It does not yet
+answer **why this route executed**. That distinction provides the reason to
+move backward through the recording.
 
 ### Start replay debugging
 
@@ -525,11 +1569,38 @@ real model returned score 65
 The debugger does not request a new inference. It is inspecting the recorded
 model result and re-executed historical Python path.
 
-### Time travel
+### Follow causality backward
 
-Use Step Back once or twice to move from the failing operation toward its
-routing branch. Then use Continue or Step Over to move forward to the same
-failure again. Also show Call Stack, Scopes, and Locals.
+Use Step Back to move from line `116` to the `serial_number` assignment and
+toward the branch at lines `112-115`. As you continue backward, historical
+locals disappear before the statements that created them. Step Over forward
+and they reappear.
+
+For the clearest route explanation, restart replay with only a breakpoint on:
+
+```python
+decision_name = route_review_score(review_score)  # line 83
+```
+
+Step Into `route_review_score`. The historical value is `65`, so:
+
+```text
+65 < 65 -> false
+65 < 70 -> true
+result  -> request_more_information
+```
+
+That answers **why Python entered the failing branch**.
+
+Next, restart with only line `82` enabled and Step Into
+`parse_model_assessment`. This shows that the score and reason came from the
+preserved `raw_model_response`, answering **where the routing input came
+from**.
+
+Finally, restart with only `worker/http_json.py:21` enabled. Step Over the
+`urlopen` statement. The response returns immediately even though the model
+gateway is not running. This is the visible proof that replay is supplying the
+historical external result rather than making a new inference.
 
 To demonstrate the exception-unwind fix, restart the replay at the failure
 breakpoint and select Step Into. Because `serial_number` is `None`, no Python
@@ -544,32 +1615,6 @@ make a new model inference.
 The full proof runs each service at or below 1 CPU and 1 GiB. Offline replay
 is constrained to 1 CPU and 768 MiB. Docker runs the image natively on AMD64
 and ARM64; Apple Silicon does not emulate an AMD64 image.
-
-## Generated Evidence
-
-After `make run`:
-
-```text
-generated/DEMO_RESULTS.md
-generated/run-summary.json
-generated/recordings/selected-failure.retrace
-generated/recordings/selected-failure.expected.json
-generated/recordings/selected-failure.proof.json
-generated/recordings/selected-failure.code-workspace
-generated/session-home/retrace/recordings/*.retrace
-generated/session-home/retrace/manifests/*.json
-generated/session-home/retrace/logs/*.log
-generated/invocations/live-*.json
-generated/replay/replay-*.log
-generated/telemetry/spans.jsonl
-generated/transcripts/dap.json
-generated/counters/model-gateway.json
-```
-
-`run-summary.json` contains the complete proof, including the failed exported
-span. `spans.jsonl` is decoded OTLP data emitted by Microsoft's host. The
-failed span and persisted invocation manifest share the same trace ID, span ID,
-Foundry call ID, session ID, and `retrace.recording.id`.
 
 ## Foundry Session Persistence
 
@@ -661,15 +1706,160 @@ The tests cover:
 - DAP stack, scopes, locals, Step Back, forward return, and inspectable Step
   Into across exception unwind.
 
+## How The Make Targets And Python Scripts Fit Together
+
+The `Makefile` is a command launcher. It contains no recording, replay, model,
+or debugger implementation. Each target expands to one or more explicit Python,
+Docker, Ollama, or Retrace commands. The Python scripts perform the assertions
+that turn those commands into a repeatable demonstration.
+
+### Historical incident workflow
+
+`make investigate` expands to this call chain:
+
+```text
+make investigate
+  |
+  +-- make replay-example
+  |     |
+  |     +-- python3 -m scripts.preflight
+  |     |     `-- docker info
+  |     |
+  |     +-- docker compose --file compose.yaml build --pull
+  |     |
+  |     `-- python3 -m scripts.run_replay_example
+  |           |
+  |           +-- reset generated/
+  |           +-- detect Docker architecture
+  |           +-- select example-artifacts/linux-<architecture>/
+  |           +-- verify recording SHA and proof manifest
+  |           +-- copy recording into generated/recordings/
+  |           +-- extract the .retrace process tree
+  |           +-- replay root process 3 times with --network none
+  |           +-- run scripts/verify_dap.py
+  |           `-- retrace-dap --recording ... --workspace
+  |
+  `-- make show-failure
+        |
+        +-- python3 -m scripts.preflight
+        `-- python3 -m scripts.show_failure
+              |
+              +-- read root PID from selected-failure.d/index.json
+              +-- replay selected-failure.d/<root-pid>.bin with --network none
+              +-- print the complete Python traceback
+              +-- compare decision, exception, location, and exit code
+              `-- save generated/replay/presentation-traceback.log
+```
+
+This workflow does not create a recording. It proves and investigates an
+existing recording that was created by the live workflow.
+
+### Fresh capture workflow
+
+`make run` expands to:
+
+```text
+make run
+  |
+  +-- python3 -m scripts.preflight
+  +-- ollama pull qwen3:1.7b
+  `-- python3 -m scripts.run_demo
+        |
+        +-- verify Docker and pinned Ollama model digest
+        +-- stop stale demo Compose services
+        +-- clear generated/
+        +-- build the pinned Python 3.12 image
+        +-- start agent, model-gateway, and telemetry-collector
+        +-- POST identical requests to /invocations
+        +-- create one retracepython worker and recording per request
+        +-- stop after distinct decisions, one success, and one failure exist
+        +-- select the first natural failure
+        +-- stop model-gateway
+        +-- replay the failure 10 times with --network none
+        +-- prove the model-call counter did not increase
+        +-- run the DAP verifier
+        +-- generate the VS Code workspace
+        +-- verify OTel/recording correlation and secret isolation
+        +-- write the proof manifest and reports
+        `-- stop this demo's Compose services
+```
+
+The recording is created inside `agent/invocation_runner.py`, not in
+`scripts/run_demo.py`. `run_demo.py` drives the system from outside and checks
+the evidence produced by the agent and worker.
+
+### Runtime source files
+
+| File | Called by | Technical responsibility |
+| --- | --- | --- |
+| `agent/main.py` | Compose `agent` service | Creates the Invocations HTTP server, reads platform request context, creates the OTel invocation span, calls `run_recorded_invocation`, and correlates the span with the recording ID and outcome. |
+| `agent/invocation_runner.py` | `agent/main.py` | Creates the recording ID and artifact paths, sanitizes the worker environment, launches `retracepython`, captures stdout/stderr, parses worker events, and atomically writes the per-invocation manifest. |
+| `agent/manifest.py` | Invocation and proof code | Provides SHA-256 and atomic manifest-writing helpers. |
+| `worker/__main__.py` | `retracepython -m worker` | Parses the request, calls the application, prints structured success/failure events, and re-raises failures so Python emits the traceback and nonzero exit code. |
+| `worker/decision_agent.py` | `worker/__main__.py` | Builds the prompt, parses strict model JSON, maps score ranges to routes, records decision evidence, and contains the optional-serial-number bug. |
+| `worker/model_client.py` | `worker/decision_agent.py` | Converts the application model call into a request to the configured model gateway. |
+| `worker/http_json.py` | `worker/model_client.py` | Implements the `urllib` HTTP call. Its `urlopen` operation is the external boundary demonstrated during replay. |
+| `external_world/model_gateway.py` | Compose `model-gateway` service | Forwards the worker's messages and response schema to the pinned Ollama model with nondeterministic sampling, augments the returned response with gateway metadata, records the request, and increments the live-call counter. |
+| `external_world/otel_collector.py` | Compose `telemetry-collector` service | Accepts OTLP/HTTP exports and writes decoded spans to `generated/telemetry/spans.jsonl`. |
+| `external_world/common.py` | Both external HTTP services | Supplies their small JSON HTTP-server base class. |
+
+### Orchestration and verification scripts
+
+| File | Invoked by | Technical responsibility |
+| --- | --- | --- |
+| `scripts/run_demo.py` | `make run` through `make demo` | Orchestrates the complete fresh model workflow and verifies every claim: identical request hashes, route variation, natural failure, ten offline replays, no replay-time model calls, DAP behavior, telemetry correlation, provenance, and final reports. |
+| `scripts/run_replay_example.py` | `make replay-example` | Selects the native reviewed artifact, verifies its proof, copies it into the active generated area, runs three offline replays, invokes the DAP verifier, and generates the VS Code workspace. |
+| `scripts/show_failure.py` | `make show-failure` | Runs one explicit terminal replay through the installed `replay` command, prints the complete traceback, validates it against the expected result, and writes the presentation log. |
+| `scripts/verify_dap.py` | Both replay workflows and Dev Container setup | Acts as a DAP client. It launches `retrace-dap`, sends protocol requests, and verifies source breakpoint stops, stack, scopes, locals, raised exceptions, clean termination, Step Back, forward execution, and Step Into across exception unwind. It is verification code, not part of the recorded application. |
+| `scripts/prepare_vscode.py` | `make vscode` and Dev Container `postCreateCommand` | Selects a compatible active or bundled recording, verifies it, extracts it, generates the `.code-workspace`, and runs the DAP preflight before interactive use. |
+| `scripts/demo_state.py` | Agent and orchestration code | Defines the fixed input case and generated-directory layout, canonicalizes JSON, and clears/recreates generated output directories. |
+| `scripts/agent_client.py` | `scripts/run_demo.py` | Sends the local Invocations request with call, user, session, and W3C trace context and returns the HTTP response plus platform identifiers. |
+| `scripts/preflight.py` | Make targets | Fails early when Docker is missing, stopped, or unreachable. |
+| `scripts/platforms.py` | Replay and promotion scripts | Normalizes AMD64/ARM64 names, detects Docker's native architecture, and selects the matching reviewed recording directory. |
+| `scripts/proof_manifest.py` | Replay and VS Code preparation | Verifies recording SHA-256, required provenance fields, and native platform before an artifact is used. |
+| `scripts/reset_demo.py` | `make prepare` and `make clean` | Clears generated demo state without deleting source or unrelated Docker data. |
+| `scripts/promote_reviewed_artifact.py` | Maintainer command | Revalidates a freshly generated failure and copies its recording, expectation, proof, and report into the architecture-specific committed artifact directory. |
+| `scripts/verify_foundry_lifecycle.py` | `make lifecycle` | Tests process shutdown while a recorded worker is in flight, then verifies durable artifact publication and replay after the external service stops. |
+| `scripts/lifecycle_model_gateway.py` | Lifecycle verifier only | Provides a delayed deterministic HTTP service used to put the lifecycle test at a known in-flight boundary. It is not used by `make run`. |
+
+### Container and editor configuration
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile` | Pins Debian Bookworm, Python 3.12.13, Retrace, retrace-dap, and all Python dependencies. Build-time checks fail if the pinned versions are not installed. |
+| `compose.yaml` | Defines the three live services, bind mount, ports, health checks, resource limits, environment, and isolated demo network. |
+| `.devcontainer/compose.yaml` | Adds a persistent `workspace` container using the same image and `/app` bind mount. It does not start a new model inference. |
+| `.devcontainer/devcontainer.json` | Tells VS Code to connect to `workspace`, install the Retrace extension in the remote extension host, select container Python, and run `scripts.prepare_vscode` after creation. |
+| `Makefile` | Gives stable operator commands for the Python and Docker workflows described above. |
+
+### Why the implementation has multiple scripts
+
+The split keeps the proof boundaries explicit:
+
+- Runtime code under `agent/` and `worker/` is the system being demonstrated.
+- `external_world/` is deliberately outside the recorded process.
+- `scripts/run_demo.py` is the live experiment controller.
+- `scripts/run_replay_example.py` is the deterministic artifact verifier.
+- `scripts/show_failure.py` exposes the normal Python traceback used to begin
+  interactive investigation.
+- `scripts/verify_dap.py` checks debugger behavior independently of the VS Code
+  user interface.
+
+Combining these into one script would make it difficult to distinguish the
+application, the external nondeterministic dependency, Retrace integration,
+and the test harness that verifies the result.
+
 ## Command Reference
 
 ### Primary workflows
 
 | Command | What it does |
 | --- | --- |
+| `make investigate` | Recommended incident walkthrough. Runs `replay-example`, then performs one additional network-disabled replay and prints the full historical traceback that leads into the VS Code investigation. |
 | `make run` | Runs `preflight`, pulls the pinned Qwen model, executes fresh real-model invocations, creates new recordings, selects a natural failure, performs ten network-disabled replays, validates DAP, and writes the complete proof set. |
 | `make replay-example` | Builds the native image, selects and verifies the architecture-matched bundled recording, performs three network-disabled replays, validates DAP, and generates the VS Code workspace. It makes no model call and creates no recording. |
-| `make presentation` | Compatibility alias for `make replay-example`. New instructions use the clearer `make replay-example` name. |
+| `make show-failure` | Replays the active selected root process through the installed `replay` CLI with networking disabled, prints and validates the complete historical traceback, and saves `presentation-traceback.log`. Run `replay-example` first. |
+| `make presentation` | Compatibility alias for the complete `make investigate` flow. New instructions use the clearer `make investigate` name. |
 
 ### Setup and service control
 
@@ -694,29 +1884,6 @@ The tests cover:
 | `make lifecycle` | Sends `SIGTERM` while a model request is in flight and proves graceful drain, durable recording publication, clean server exit, and replay after shutdown. |
 | `make vscode` | Selects a compatible failed recording, verifies its proof, extracts and indexes it, creates the `.code-workspace`, and runs the DAP preflight. The Dev Container runs the same preparation automatically. |
 | `make clean` | Stops this demo's Compose services, removes only this demo's Compose volumes, and clears generated demo output. It does not run a global Docker prune. |
-
-### The two main command chains
-
-```text
-make run
-  -> preflight
-  -> model
-  -> demo
-  -> fresh model calls
-  -> fresh recordings
-  -> ten offline replays
-  -> DAP and evidence validation
-```
-
-```text
-make replay-example
-  -> preflight
-  -> build
-  -> verified bundled recording
-  -> three offline replays
-  -> DAP and provenance validation
-  -> VS Code workspace
-```
 
 ## Architecture And Presentation Script
 

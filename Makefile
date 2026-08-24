@@ -7,14 +7,26 @@ export DEMO_UID
 export DEMO_GID
 export DEMO_SOURCE_GIT_SHA
 
-.PHONY: run replay-example presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode
+.PHONY: run investigate replay-example show-failure presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode
 
 run: preflight model demo
+
+investigate:
+	@printf '\n%s\n' '=== 1. Prepare and verify the reviewed Retrace recording ==='
+	$(MAKE) replay-example
+	@printf '\n%s\n' '=== 2. Replay that recording and print the historical traceback ==='
+	$(MAKE) show-failure
+	@printf '\n%s\n' '=== 3. Open the same recording in VS Code ==='
+	@printf '%s\n' 'Run: code .'
+	@printf '%s\n' 'Then select: Dev Containers: Reopen in Container'
 
 replay-example: preflight build
 	python3 -m scripts.run_replay_example
 
-presentation: replay-example
+show-failure: preflight
+	python3 -m scripts.show_failure
+
+presentation: investigate
 
 preflight:
 	python3 -m scripts.preflight

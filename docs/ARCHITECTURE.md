@@ -23,6 +23,48 @@ Retrace
   Can the same execution be replayed after the model changes or disappears?
 ```
 
+## Incident Causality
+
+The demo is designed around a value-to-control-flow chain that can be followed
+inside one historical execution:
+
+```text
+external sampled response
+  message.content = {"review_score": 65, "reason": "..."}
+                     |
+                     v
+parse_model_assessment
+  review_score = 65
+                     |
+                     v
+route_review_score
+  decision_name = request_more_information
+                     |
+                     v
+route-specific request field
+  serial_number = None
+                     |
+                     v
+failing operation
+  serial_number.strip()
+                     |
+                     v
+AttributeError
+```
+
+The terminal traceback identifies the bottom of this chain at
+`worker/decision_agent.py:116`. DAP then walks from symptom toward cause:
+
+```text
+line 116         concrete bad value and exception
+line 83          deterministic routing decision
+line 82          historical model output parsed into application state
+http_json.py:21  recorded external response supplied without a live model
+```
+
+Those stops are not independent feature examples. Together they establish why
+one particular model response made one particular application invocation fail.
+
 ## Runtime
 
 ```text

@@ -7,12 +7,18 @@ export DEMO_UID
 export DEMO_GID
 export DEMO_SOURCE_GIT_SHA
 
-.PHONY: run replay-example presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode
+.PHONY: run investigate replay-example show-failure presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode
 
 run: preflight model demo
 
+investigate: replay-example
+	$(MAKE) show-failure
+
 replay-example: preflight build
 	python3 -m scripts.run_replay_example
+
+show-failure: preflight
+	python3 -m scripts.show_failure
 
 presentation: replay-example
 

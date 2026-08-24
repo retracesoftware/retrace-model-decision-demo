@@ -7,21 +7,34 @@ export DEMO_UID
 export DEMO_GID
 export DEMO_SOURCE_GIT_SHA
 
-.PHONY: run investigate replay-example show-failure presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode
+.PHONY: run investigate compare replay-pair replay-example show-success show-failure presentation preflight model build prepare start stop clean demo test lifecycle status logs shell vscode vscode-success
 
 run: preflight model demo
 
 investigate:
 	@printf '\n%s\n' '=== 1. Prepare and verify the reviewed Retrace recording ==='
-	$(MAKE) replay-example
+	$(MAKE) replay-pair
 	@printf '\n%s\n' '=== 2. Replay that recording and print the historical traceback ==='
 	$(MAKE) show-failure
 	@printf '\n%s\n' '=== 3. Open the same recording in VS Code ==='
 	@printf '%s\n' 'Run: code .'
 	@printf '%s\n' 'Then select: Dev Containers: Reopen in Container'
 
-replay-example: preflight build
+compare:
+	@printf '\n%s\n' '=== 1. Prepare and verify the paired historical executions ==='
+	$(MAKE) replay-pair
+	@printf '\n%s\n' '=== 2. Replay the passing execution with networking disabled ==='
+	$(MAKE) show-success
+	@printf '\n%s\n' '=== 3. Replay the divergent failing execution with networking disabled ==='
+	$(MAKE) show-failure
+
+replay-pair: preflight build
 	python3 -m scripts.run_replay_example
+
+replay-example: replay-pair
+
+show-success: preflight
+	python3 -m scripts.show_success
 
 show-failure: preflight
 	python3 -m scripts.show_failure
@@ -64,7 +77,10 @@ lifecycle: build
 		python -m scripts.verify_foundry_lifecycle --runs 1
 
 vscode:
-	python3 -m scripts.prepare_vscode
+	python3 -m scripts.prepare_vscode --recording failure
+
+vscode-success:
+	python3 -m scripts.prepare_vscode --recording success
 
 status:
 	$(COMPOSE) ps

@@ -17,6 +17,7 @@ CALLER_SOURCE = ROOT / "worker" / "__main__.py"
 LOCAL_SOURCE = Path(__file__).resolve().parents[1] / "worker" / "decision_agent.py"
 LOCAL_CALLER_SOURCE = Path(__file__).resolve().parents[1] / "worker" / "__main__.py"
 MARKER = "RETRACE_MODEL_FAILURE_BREAKPOINT"
+ROUTE_MARKER = "RETRACE_MODEL_ROUTE_BREAKPOINT"
 CALLER_MARKER = "except Exception as error:"
 
 
@@ -61,6 +62,30 @@ def marker_line() -> int:
     ]
     if len(matches) != 1:
         raise AssertionError(f"expected one {MARKER} marker, found {matches}")
+    return matches[0]
+
+
+def route_line() -> int:
+    source = SOURCE if SOURCE.is_file() else LOCAL_SOURCE
+    matches = [
+        number
+        for number, text in enumerate(source.read_text().splitlines(), start=1)
+        if ROUTE_MARKER in text
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one {ROUTE_MARKER} marker, found {matches}")
+    return matches[0]
+
+
+def line_containing(text: str) -> int:
+    source = SOURCE if SOURCE.is_file() else LOCAL_SOURCE
+    matches = [
+        number
+        for number, line in enumerate(source.read_text().splitlines(), start=1)
+        if text in line
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one source line containing {text!r}: {matches}")
     return matches[0]
 
 
@@ -410,6 +435,156 @@ def verify_step_into_exception_unwind(
         client.close()
 
 
+def verify_success(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
+    line = route_line()
+    pid = int(trace_index(recording)["root"]["pid"])
+    client = DAPClient(recording, pid)
+    try:
+        capabilities = start_session(client, recording)
+        if not capabilities.get("supportsStepBack"):
+            raise AssertionError("DAP did not advertise reverse execution")
+        client.send(
+            "setBreakpoints",
+            {
+                "source": {"name": SOURCE.name, "path": str(SOURCE)},
+                "lines": [line],
+                "breakpoints": [{"line": line}],
+            },
+        )
+        breakpoints = (
+            client.response("setBreakpoints").get("body", {}).get("breakpoints", [])
+        )
+        if not breakpoints or not breakpoints[0].get("verified"):
+            raise AssertionError(
+                f"success-route breakpoint not verified: {breakpoints}"
+            )
+
+        frames = configure_to_marker(client, line=line)
+        frame = next(
+            item
+            for item in frames
+            if item.get("source", {}).get("path") == str(SOURCE)
+            and int(item.get("line", 0)) == line
+        )
+        client.send("scopes", {"frameId": int(frame["id"])})
+        scopes = client.response("scopes").get("body", {}).get("scopes", [])
+        locals_scope = next(
+            (scope for scope in scopes if scope.get("name") == "Locals"), None
+        )
+        if not locals_scope or not locals_scope.get("variablesReference"):
+            raise AssertionError(f"successful historical Locals unavailable: {scopes}")
+        client.send(
+            "variables",
+            {"variablesReference": int(locals_scope["variablesReference"])},
+        )
+        variables = client.response("variables").get("body", {}).get("variables", [])
+        by_name = {str(item.get("name")): item for item in variables}
+        decision = expected["decision"]
+        for name, value in {
+            "review_score": str(decision["review_score"]),
+            "decision_name": str(decision["decision"]),
+            "decision_reason": str(decision["reason"]),
+            "gateway_response_id": str(decision["gateway_response_id"]),
+            "model_request_sha256": str(decision["model_request_sha256"]),
+            "model_response_sha256": str(decision["model_response_sha256"]),
+        }.items():
+            rendered = str(by_name.get(name, {}).get("value", ""))
+            if not dap_value_matches(value, rendered):
+                raise AssertionError(
+                    f"successful historical local {name} omitted {value!r}: "
+                    f"{rendered!r}"
+                )
+
+        request_variable = by_name.get("request")
+        if not request_variable:
+            raise AssertionError("successful historical Locals omitted request")
+        request_reference = int(request_variable.get("variablesReference", 0))
+        if request_reference:
+            client.send("variables", {"variablesReference": request_reference})
+            request_members = (
+                client.response("variables").get("body", {}).get("variables", [])
+            )
+            request_values = {
+                str(item.get("name")): str(item.get("value"))
+                for item in request_members
+            }
+            if request_values.get("serial_number") != "None":
+                raise AssertionError(
+                    "successful historical request did not preserve "
+                    f"serial_number=None: {request_values}"
+                )
+        else:
+            rendered_request = str(request_variable.get("value", ""))
+            if (
+                "serial_number" not in rendered_request
+                or "None" not in rendered_request
+            ):
+                raise AssertionError(
+                    "successful historical request rendering omitted "
+                    f"serial_number=None: {rendered_request}"
+                )
+
+        route = str(decision["decision"])
+        if route == "approve_refund":
+            expected_body_line = line_containing(
+                'action_detail = "refund approved from the available evidence"'
+            )
+        elif route == "escalate_specialist":
+            expected_body_line = line_containing(
+                'action_detail = "send the case to a regulated-equipment specialist"'
+            )
+        else:
+            raise AssertionError(
+                f"selected successful route is not successful: {route}"
+            )
+
+        observed_lines = []
+        for _ in range(4):
+            client.navigate_and_stop("next", "step")
+            client.send("stackTrace", {"threadId": 1})
+            step_frames = (
+                client.response("stackTrace").get("body", {}).get("stackFrames", [])
+            )
+            top = step_frames[0]
+            observed_lines.append(int(top.get("line", 0)))
+            if (
+                top.get("source", {}).get("path") == str(SOURCE)
+                and int(top.get("line", 0)) == expected_body_line
+            ):
+                break
+        else:
+            raise AssertionError(
+                f"successful replay did not enter {route}: {observed_lines}"
+            )
+
+        client.navigate_and_stop("stepBack", "step")
+        client.send("stackTrace", {"threadId": 1})
+        reverse_frames = (
+            client.response("stackTrace").get("body", {}).get("stackFrames", [])
+        )
+        reverse_top = reverse_frames[0]
+        if reverse_top.get("source", {}).get("path") != str(SOURCE):
+            raise AssertionError(
+                f"success Step Back left decision function: {reverse_top}"
+            )
+    finally:
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        transcript.write_text(json.dumps(client.messages, indent=2) + "\n")
+        client.close()
+
+    verify_no_breakpoint_termination(
+        recording,
+        transcript=transcript.with_name(
+            f"{transcript.stem}-no-breakpoint{transcript.suffix}"
+        ),
+    )
+    print(
+        "dap=pass outcome=success model_response=historical "
+        "decision=historical serial_number=None stack=pass scopes=pass "
+        "locals=pass route=pass step_back=pass termination=pass"
+    )
+
+
 def verify(recording: Path, expected: dict[str, Any], transcript: Path) -> None:
     line = marker_line()
     pid = int(trace_index(recording)["root"]["pid"])
@@ -580,7 +755,11 @@ def main() -> None:
         default=Path("/app/generated/transcripts/dap.json"),
     )
     args = parser.parse_args()
-    verify(args.recording, json.loads(args.expected.read_text()), args.transcript)
+    expected = json.loads(args.expected.read_text())
+    if expected.get("failure") is None:
+        verify_success(args.recording, expected, args.transcript)
+    else:
+        verify(args.recording, expected, args.transcript)
 
 
 if __name__ == "__main__":

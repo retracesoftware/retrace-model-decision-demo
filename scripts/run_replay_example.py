@@ -10,30 +10,39 @@ from scripts.platforms import docker_architecture, reviewed_artifact_directory
 from scripts.run_demo import (
     generate_workspace,
     replay_failure_times,
+    replay_success_times,
     verify_dap,
     verify_docker,
 )
 
 
-RECORDING_NAME = "selected-failure.retrace"
-EXPECTED_NAME = "selected-failure.expected.json"
-PROOF_NAME = "selected-failure.proof.json"
+def artifact_names(outcome: str) -> tuple[str, str, str]:
+    if outcome not in {"failure", "success"}:
+        raise ValueError(f"unsupported reviewed outcome: {outcome}")
+    return (
+        f"selected-{outcome}.retrace",
+        f"selected-{outcome}.expected.json",
+        f"selected-{outcome}.proof.json",
+    )
 
 
-def copy_reviewed_failure() -> tuple[Path, Path, Path]:
-    architecture = docker_architecture()
+def copy_reviewed_invocation(
+    outcome: str,
+    *,
+    architecture: str,
+) -> tuple[Path, Path, Path]:
+    recording_name, expected_name, proof_name = artifact_names(outcome)
     example = reviewed_artifact_directory(ROOT, architecture)
-    source_recording = example / RECORDING_NAME
-    source_expected = example / EXPECTED_NAME
-    source_proof = example / PROOF_NAME
+    source_recording = example / recording_name
+    source_expected = example / expected_name
+    source_proof = example / proof_name
     if not all(
         path.is_file() for path in (source_recording, source_expected, source_proof)
     ):
         raise RuntimeError(
-            f"the reviewed Linux {architecture} failure artifact or its proof "
-            "manifest is missing; "
-            "run the full proof and promote a genuine failed recording before "
-            "using the bundled replay example"
+            f"the reviewed Linux {architecture} {outcome} artifact or its proof "
+            "manifest is missing; run the full proof and promote a genuine "
+            f"{outcome} recording before using the bundled replay pair"
         )
     verify_recording_proof(
         source_recording,
@@ -42,15 +51,12 @@ def copy_reviewed_failure() -> tuple[Path, Path, Path]:
     )
     destination = GENERATED / "recordings"
     destination.mkdir(parents=True, exist_ok=True)
-    recording = destination / RECORDING_NAME
-    expected = destination / EXPECTED_NAME
-    proof = destination / PROOF_NAME
+    recording = destination / recording_name
+    expected = destination / expected_name
+    proof = destination / proof_name
     shutil.copy2(source_recording, recording)
     shutil.copy2(source_expected, expected)
     shutil.copy2(source_proof, proof)
-    report = example / "DEMO_RESULTS.failure.example.md"
-    if report.is_file():
-        shutil.copy2(report, GENERATED / "DEMO_RESULTS.md")
     recording.chmod(recording.stat().st_mode | 0o111)
     verify_recording_proof(
         recording,
@@ -60,46 +66,122 @@ def copy_reviewed_failure() -> tuple[Path, Path, Path]:
     return recording, expected, proof
 
 
+def verify_pair(
+    failure_expected: dict,
+    success_expected: dict,
+    failure_proof: dict,
+    success_proof: dict,
+) -> None:
+    if failure_expected["runtime_input"] != success_expected["runtime_input"]:
+        raise AssertionError("reviewed pair does not share the same runtime input")
+    if (
+        failure_proof["model"]["request_sha256"]
+        != success_proof["model"]["request_sha256"]
+    ):
+        raise AssertionError("reviewed pair does not share the same model request")
+    if (
+        failure_proof["model"]["response_sha256"]
+        == success_proof["model"]["response_sha256"]
+    ):
+        raise AssertionError("reviewed pair unexpectedly shares one model response")
+    if (
+        failure_expected["decision"]["decision"]
+        == success_expected["decision"]["decision"]
+    ):
+        raise AssertionError("reviewed pair did not diverge at model routing")
+    if failure_expected.get("failure") is None:
+        raise AssertionError("reviewed failure has no exception")
+    if success_expected.get("failure") is not None:
+        raise AssertionError("reviewed success unexpectedly has an exception")
+    if success_expected["worker_exit_code"] != 0:
+        raise AssertionError("reviewed success did not exit cleanly")
+    if (
+        failure_proof["application"]["request_sha256"]
+        != success_proof["application"]["request_sha256"]
+    ):
+        raise AssertionError("reviewed pair does not share the same worker request")
+    for section in ("source", "runtime"):
+        if failure_proof[section] != success_proof[section]:
+            raise AssertionError(
+                f"reviewed pair was not captured from one {section}: "
+                f"{failure_proof[section]} != {success_proof[section]}"
+            )
+    if failure_proof["model"]["digest"] != success_proof["model"]["digest"]:
+        raise AssertionError("reviewed pair used different model builds")
+
+
 def main() -> None:
     verify_docker()
     reset_generated()
-    recording, expected_path, proof_path = copy_reviewed_failure()
-    expected = json.loads(expected_path.read_text())
     architecture = docker_architecture()
-    proof = verify_recording_proof(
-        recording,
-        proof_path,
+    failure_recording, failure_expected_path, failure_proof_path = (
+        copy_reviewed_invocation("failure", architecture=architecture)
+    )
+    success_recording, success_expected_path, success_proof_path = (
+        copy_reviewed_invocation("success", architecture=architecture)
+    )
+    report = (
+        reviewed_artifact_directory(ROOT, architecture)
+        / "DEMO_RESULTS.paired.example.md"
+    )
+    if report.is_file():
+        shutil.copy2(report, GENERATED / "DEMO_RESULTS.md")
+
+    failure_expected = json.loads(failure_expected_path.read_text())
+    success_expected = json.loads(success_expected_path.read_text())
+    failure_proof = verify_recording_proof(
+        failure_recording,
+        failure_proof_path,
         expected_platform=f"linux/{architecture}",
     )
+    success_proof = verify_recording_proof(
+        success_recording,
+        success_proof_path,
+        expected_platform=f"linux/{architecture}",
+    )
+    verify_pair(failure_expected, success_expected, failure_proof, success_proof)
 
-    print("replay_example=reviewed-genuine-failed-invocation")
+    print("replay_example=reviewed-genuine-success-and-failure")
     print(f"docker_architecture={architecture}")
-    print(f"recording={recording}")
+    print(f"model_request_sha256={failure_proof['model']['request_sha256']}")
     print(
-        "historical_model="
-        f"score:{expected['decision']['review_score']} "
-        f"route:{expected['decision']['decision']}"
+        "historical_success="
+        f"score:{success_expected['decision']['review_score']} "
+        f"route:{success_expected['decision']['decision']} "
+        f"recording:{success_recording}"
     )
     print(
         "historical_failure="
-        f"{expected['failure']['exception_type']}: "
-        f"{expected['failure']['exception_message']}"
+        f"score:{failure_expected['decision']['review_score']} "
+        f"route:{failure_expected['decision']['decision']} "
+        f"exception:{failure_expected['failure']['exception_type']} "
+        f"recording:{failure_recording}"
     )
-    replay_failure_times(recording, expected, count=3)
-    print(verify_dap(recording, expected_path))
-    print(generate_workspace(recording))
+
+    replay_success_times(success_recording, success_expected, count=3)
+    replay_failure_times(failure_recording, failure_expected, count=3)
+    print(verify_dap(success_recording, success_expected_path))
+    print(verify_dap(failure_recording, failure_expected_path))
+    print(generate_workspace(success_recording))
+    print(generate_workspace(failure_recording))
     print(
-        "proof=pass "
-        f"sha256={proof['artifact']['sha256']} "
-        f"source_git_sha={proof['source']['git_sha']} "
-        f"trace_id={proof['telemetry']['trace_id']} "
-        f"span_id={proof['telemetry']['span_id']} "
-        f"foundry_call_id={proof['foundry']['call_id']} "
-        f"session_id={proof['foundry']['session_id']}"
+        "success_proof=pass "
+        f"sha256={success_proof['artifact']['sha256']} "
+        f"source_git_sha={success_proof['source']['git_sha']} "
+        f"trace_id={success_proof['telemetry']['trace_id']} "
+        f"span_id={success_proof['telemetry']['span_id']}"
     )
-    print("replay_example=ready")
-    print("next=code .")
-    print("then=Dev Containers: Reopen in Container")
+    print(
+        "failure_proof=pass "
+        f"sha256={failure_proof['artifact']['sha256']} "
+        f"source_git_sha={failure_proof['source']['git_sha']} "
+        f"trace_id={failure_proof['telemetry']['trace_id']} "
+        f"span_id={failure_proof['telemetry']['span_id']}"
+    )
+    print("replay_pair=ready")
+    print("next=make show-success")
+    print("then=make show-failure")
+    print("debug=Open either generated recording workspace in the Dev Container")
 
 
 if __name__ == "__main__":

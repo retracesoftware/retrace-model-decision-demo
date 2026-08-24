@@ -13,6 +13,7 @@ REQUIRED_VALUES = (
     ("artifact", "platform"),
     ("source", "git_sha"),
     ("source", "worker_sha256"),
+    ("application", "request_sha256"),
     ("runtime", "python"),
     ("runtime", "retracesoftware"),
     ("runtime", "retracesoftware_dap"),

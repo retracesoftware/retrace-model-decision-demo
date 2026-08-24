@@ -21,7 +21,12 @@ from scripts.demo_state import CASE
 from scripts.proof_manifest import verify_recording_proof
 from scripts import platforms
 from scripts.platforms import normalize_architecture, reviewed_artifact_directory
-from scripts.run_demo import DemoPreflightError, verify_docker
+from scripts.run_demo import (
+    DemoPreflightError,
+    parse_success_events,
+    structured_worker_events,
+    verify_docker,
+)
 from scripts.verify_dap import (
     SOURCE,
     configure_to_marker,
@@ -68,6 +73,32 @@ def test_worker_events_preserve_decision_before_natural_failure() -> None:
         "request_more_information"
     )
     assert _event(events, "application_failure")["exception_type"] == ("AttributeError")
+
+
+def test_worker_events_preserve_decision_and_output_for_success() -> None:
+    stdout = "\n".join(
+        [
+            '{"event":"model_decision_selected","decision":"approve_refund"}',
+            '{"event":"invocation_completed","output":{"action_detail":"approved"}}',
+        ]
+    )
+
+    decision, completed = parse_success_events(stdout)
+
+    assert decision["decision"] == "approve_refund"
+    assert completed["output"] == {"action_detail": "approved"}
+
+
+def test_replay_event_parser_rejects_duplicate_event_names() -> None:
+    stdout = "\n".join(
+        [
+            '{"event":"model_decision_selected","decision":"approve_refund"}',
+            '{"event":"model_decision_selected","decision":"escalate_specialist"}',
+        ]
+    )
+
+    with pytest.raises(AssertionError, match="duplicate"):
+        structured_worker_events(stdout)
 
 
 def test_failed_recorded_invocation_remains_a_first_class_result(tmp_path) -> None:
@@ -189,32 +220,70 @@ def test_container_architecture_falls_back_when_docker_cli_is_absent(
         if path.is_dir()
     ),
 )
-def test_reviewed_presentation_artifact_is_complete(architecture: str) -> None:
+def test_reviewed_presentation_artifact_pair_is_complete(architecture: str) -> None:
     artifacts = reviewed_artifact_directory(ROOT, architecture)
-    recording = artifacts / "selected-failure.retrace"
-    expected = json.loads((artifacts / "selected-failure.expected.json").read_text())
-    proof = verify_recording_proof(
-        recording,
-        artifacts / "selected-failure.proof.json",
-        expected_platform=f"linux/{architecture}",
-    )
+    expected = {}
+    proofs = {}
+    for outcome in ("failure", "success"):
+        recording = artifacts / f"selected-{outcome}.retrace"
+        expected[outcome] = json.loads(
+            (artifacts / f"selected-{outcome}.expected.json").read_text()
+        )
+        proofs[outcome] = verify_recording_proof(
+            recording,
+            artifacts / f"selected-{outcome}.proof.json",
+            expected_platform=f"linux/{architecture}",
+        )
+        assert recording.stat().st_size > 10_000
+        assert proofs[outcome]["runtime"] == {
+            "python": "3.12.13",
+            "retracesoftware": "0.2.29",
+            "retracesoftware_dap": "0.2.29",
+        }
+        assert proofs[outcome]["model"]["name"] == "qwen3:1.7b"
+        assert len(proofs[outcome]["telemetry"]["trace_id"]) == 32
+        assert len(proofs[outcome]["telemetry"]["span_id"]) == 16
 
-    assert recording.stat().st_size > 10_000
-    assert expected["decision"]["decision"] == "request_more_information"
-    assert 65 <= expected["decision"]["review_score"] < 70
-    assert expected["failure"] == {
+    failure = expected["failure"]
+    success = expected["success"]
+    assert failure["decision"]["decision"] == "request_more_information"
+    assert 65 <= failure["decision"]["review_score"] < 70
+    assert failure["failure"] == {
         "exception_type": "AttributeError",
         "exception_message": "'NoneType' object has no attribute 'strip'",
     }
-    assert expected["runtime_input"]["serial_number"] is None
-    assert proof["runtime"] == {
-        "python": "3.12.13",
-        "retracesoftware": "0.2.29",
-        "retracesoftware_dap": "0.2.29",
+    assert failure["runtime_input"]["serial_number"] is None
+
+    assert success["failure"] is None
+    assert success["worker_exit_code"] == 0
+    assert success["decision"]["decision"] in {
+        "approve_refund",
+        "escalate_specialist",
     }
-    assert proof["model"]["name"] == "qwen3:1.7b"
-    assert len(proof["telemetry"]["trace_id"]) == 32
-    assert len(proof["telemetry"]["span_id"]) == 16
+    assert success["output"]["decision"] == success["decision"]["decision"]
+    assert success["runtime_input"] == failure["runtime_input"]
+
+    assert (
+        proofs["success"]["model"]["request_sha256"]
+        == proofs["failure"]["model"]["request_sha256"]
+    )
+    assert (
+        proofs["success"]["application"]["request_sha256"]
+        == proofs["failure"]["application"]["request_sha256"]
+    )
+    assert (
+        proofs["success"]["model"]["response_sha256"]
+        != proofs["failure"]["model"]["response_sha256"]
+    )
+    assert (
+        proofs["success"]["source"]["worker_sha256"]
+        == proofs["failure"]["source"]["worker_sha256"]
+    )
+    assert proofs["success"]["source"] == proofs["failure"]["source"]
+    assert proofs["success"]["runtime"] == proofs["failure"]["runtime"]
+    assert (
+        proofs["success"]["model"]["digest"] == (proofs["failure"]["model"]["digest"])
+    )
 
 
 def test_agent_uses_microsoft_invocation_contract() -> None:

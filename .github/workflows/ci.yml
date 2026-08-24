@@ -45,11 +45,14 @@ jobs:
       - name: Run source tests and static checks
         run: make test
 
-      - name: Verify the reviewed recording through DAP
+      - name: Verify both reviewed recordings through DAP
         run: |
           DEMO_UID=$(id -u) DEMO_GID=$(id -g) \
             docker compose --file compose.yaml run --rm --no-deps agent \
-            python -m scripts.prepare_vscode
+            python -m scripts.prepare_vscode --recording failure
+          DEMO_UID=$(id -u) DEMO_GID=$(id -g) \
+            docker compose --file compose.yaml run --rm --no-deps agent \
+            python -m scripts.prepare_vscode --recording success
 
       - name: Repeat the bundled replay and DAP proof five times
         run: |
@@ -73,6 +76,8 @@ jobs:
             generated/DEMO_RESULTS.md
             generated/recordings/selected-failure.expected.json
             generated/recordings/selected-failure.proof.json
+            generated/recordings/selected-success.expected.json
+            generated/recordings/selected-success.proof.json
             generated/lifecycle/
           if-no-files-found: warn
           retention-days: 14
@@ -161,6 +166,10 @@ jobs:
               generated/recordings/selected-failure.expected.json \
               generated/recordings/selected-failure.proof.json \
               generated/recordings/selected-failure.code-workspace \
+              generated/recordings/selected-success.retrace \
+              generated/recordings/selected-success.expected.json \
+              generated/recordings/selected-success.proof.json \
+              generated/recordings/selected-success.code-workspace \
               "${destination}/recordings/"
             cp generated/telemetry/spans.jsonl "${destination}/telemetry/"
           done
@@ -223,7 +232,7 @@ jobs:
             retrace-model-decision-demo:py312 \
             curl --fail --silent http://host.docker.internal:11434/api/tags
 
-      - name: Capture and validate a native ARM64 failure
+      - name: Capture and validate a native ARM64 success/failure pair
         run: python3 -m scripts.run_demo --skip-build
 
       - name: Upload the reviewed ARM64 candidate
@@ -236,6 +245,9 @@ jobs:
             generated/recordings/selected-failure.retrace
             generated/recordings/selected-failure.expected.json
             generated/recordings/selected-failure.proof.json
+            generated/recordings/selected-success.retrace
+            generated/recordings/selected-success.expected.json
+            generated/recordings/selected-success.proof.json
           if-no-files-found: error
           retention-days: 14
 

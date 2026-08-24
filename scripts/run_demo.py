@@ -262,23 +262,41 @@ def container_path(host_path: Path) -> Path:
     return Path("/app") / host_path.relative_to(ROOT)
 
 
-def parse_worker_events(output: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def structured_worker_events(output: str) -> dict[str, dict[str, Any]]:
     events: dict[str, dict[str, Any]] = {}
     for line in output.splitlines():
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and payload.get("event") in {
-            "model_decision_selected",
-            "application_failure",
-        }:
-            events[str(payload["event"])] = payload
+        if not isinstance(payload, dict) or not isinstance(payload.get("event"), str):
+            continue
+        name = str(payload["event"])
+        if name in events:
+            raise AssertionError(f"replay emitted duplicate {name!r} events")
+        events[name] = payload
+    return events
+
+
+def parse_worker_events(output: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    events = structured_worker_events(output)
     try:
         return events["model_decision_selected"], events["application_failure"]
     except KeyError as error:
         raise AssertionError(
             f"replay omitted structured worker events:\n{output}"
+        ) from error
+
+
+def parse_success_events(output: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    events = structured_worker_events(output)
+    if "application_failure" in events:
+        raise AssertionError(f"successful replay emitted a failure event:\n{output}")
+    try:
+        return events["model_decision_selected"], events["invocation_completed"]
+    except KeyError as error:
+        raise AssertionError(
+            f"successful replay omitted structured worker events:\n{output}"
         ) from error
 
 
@@ -297,24 +315,59 @@ def failure_expectation(invocation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def prepare_selected_failure(invocation: dict[str, Any]) -> tuple[Path, Path]:
+def success_expectation(invocation: dict[str, Any]) -> dict[str, Any]:
+    output = invocation.get("output")
+    if not invocation.get("succeeded") or not isinstance(output, dict):
+        raise AssertionError(f"selected invocation did not succeed: {invocation}")
+    return {
+        "decision": {key: invocation[key] for key in DECISION_FIELDS},
+        "output": output,
+        "failure": None,
+        "worker_exit_code": int(invocation["manifest"]["worker_exit_code"]),
+        "runtime_input": {"serial_number": CASE["serial_number"]},
+    }
+
+
+def prepare_selected_invocation(
+    invocation: dict[str, Any],
+    *,
+    outcome: str,
+) -> tuple[Path, Path]:
+    if outcome not in {"failure", "success"}:
+        raise ValueError(f"unsupported selected invocation outcome: {outcome}")
     source = Path(
         str(invocation["manifest"]["recording_path"]).replace("/app/", f"{ROOT}/")
     )
-    selected = GENERATED / "recordings" / "selected-failure.retrace"
-    expected = GENERATED / "recordings" / "selected-failure.expected.json"
+    selected = GENERATED / "recordings" / f"selected-{outcome}.retrace"
+    expected = GENERATED / "recordings" / f"selected-{outcome}.expected.json"
+    expectation = (
+        failure_expectation(invocation)
+        if outcome == "failure"
+        else success_expectation(invocation)
+    )
     shutil.copy2(source, selected)
     selected.chmod(selected.stat().st_mode | 0o111)
-    expected.write_text(json.dumps(failure_expectation(invocation), indent=2) + "\n")
+    expected.write_text(json.dumps(expectation, indent=2) + "\n")
     return selected, expected
 
 
-def replay_failure_times(
+def prepare_selected_failure(invocation: dict[str, Any]) -> tuple[Path, Path]:
+    return prepare_selected_invocation(invocation, outcome="failure")
+
+
+def prepare_selected_success(invocation: dict[str, Any]) -> tuple[Path, Path]:
+    return prepare_selected_invocation(invocation, outcome="success")
+
+
+def replay_invocation_times(
     recording: Path,
     expected: dict[str, Any],
     *,
+    outcome: str,
     count: int = REPLAY_COUNT,
 ) -> list[dict[str, Any]]:
+    if outcome not in {"failure", "success"}:
+        raise ValueError(f"unsupported replay outcome: {outcome}")
     extracted = recording.with_suffix(".d")
     shutil.rmtree(extracted, ignore_errors=True)
     extraction = in_offline_container([str(container_path(recording)), "--extract"])
@@ -324,38 +377,57 @@ def replay_failure_times(
     pid = int(index["root"]["pid"])
     pidfile = container_path(extracted) / f"{pid}.bin"
     expected_decision = expected["decision"]
-    expected_failure = expected["failure"]
     proof = []
     for number in range(1, count + 1):
         replay = in_offline_container([str(pidfile)], check=False)
-        log_path = GENERATED / "replay" / f"replay-{number:02d}.log"
+        prefix = "replay" if outcome == "failure" else "success-replay"
+        log_path = GENERATED / "replay" / f"{prefix}-{number:02d}.log"
         log_path.write_text(replay.stdout)
-        decision_event, failure_event = parse_worker_events(replay.stdout)
-        actual_decision = _decision_payload(decision_event)
-        actual_failure = {
-            "exception_type": failure_event["exception_type"],
-            "exception_message": failure_event["exception_message"],
-        }
         if replay.returncode != expected["worker_exit_code"]:
             raise AssertionError(
                 f"offline replay {number} exit changed: "
                 f"{replay.returncode} != {expected['worker_exit_code']}"
             )
+        if outcome == "failure":
+            decision_event, failure_event = parse_worker_events(replay.stdout)
+            actual_failure = {
+                "exception_type": failure_event["exception_type"],
+                "exception_message": failure_event["exception_message"],
+            }
+            if actual_failure != expected["failure"]:
+                raise AssertionError(
+                    f"offline replay {number} changed exception:\n"
+                    f"expected={expected['failure']}\nactual={actual_failure}"
+                )
+            if "serial_number.strip()" not in replay.stdout:
+                raise AssertionError(
+                    "replay traceback omitted the historical failing line"
+                )
+            actual_outcome: dict[str, Any] | None = actual_failure
+            exception_type = actual_failure["exception_type"]
+        else:
+            decision_event, completed_event = parse_success_events(replay.stdout)
+            actual_output = completed_event.get("output")
+            if actual_output != expected["output"]:
+                raise AssertionError(
+                    f"offline replay {number} changed successful output:\n"
+                    f"expected={expected['output']}\nactual={actual_output}"
+                )
+            if "Traceback (most recent call last)" in replay.stdout:
+                raise AssertionError(
+                    "successful replay unexpectedly emitted a traceback"
+                )
+            actual_outcome = actual_output
+            exception_type = "none"
+        actual_decision = _decision_payload(decision_event)
         if actual_decision != expected_decision:
             raise AssertionError(
                 f"offline replay {number} changed model decision:\n"
                 f"expected={expected_decision}\nactual={actual_decision}"
             )
-        if actual_failure != expected_failure:
-            raise AssertionError(
-                f"offline replay {number} changed exception:\n"
-                f"expected={expected_failure}\nactual={actual_failure}"
-            )
-        if "serial_number.strip()" not in replay.stdout:
-            raise AssertionError("replay traceback omitted the historical failing line")
         observation = {
             "decision": actual_decision,
-            "failure": actual_failure,
+            "outcome": actual_outcome,
             "exit_code": replay.returncode,
         }
         output_sha256 = hashlib.sha256(canonical_json(observation).encode()).hexdigest()
@@ -364,7 +436,8 @@ def replay_failure_times(
                 "replay": number,
                 "decision": actual_decision["decision"],
                 "review_score": actual_decision["review_score"],
-                "exception_type": actual_failure["exception_type"],
+                "exception_type": exception_type,
+                "outcome": outcome,
                 "output_sha256": output_sha256,
                 "network": "none",
                 "match": True,
@@ -373,13 +446,42 @@ def replay_failure_times(
         print(
             f"replay={number:02d} score={actual_decision['review_score']} "
             f"decision={actual_decision['decision']} "
-            f"exception={actual_failure['exception_type']} "
+            f"outcome={outcome} exception={exception_type} "
             f"network=none match=yes"
         )
     return proof
 
 
+def replay_failure_times(
+    recording: Path,
+    expected: dict[str, Any],
+    *,
+    count: int = REPLAY_COUNT,
+) -> list[dict[str, Any]]:
+    return replay_invocation_times(
+        recording,
+        expected,
+        outcome="failure",
+        count=count,
+    )
+
+
+def replay_success_times(
+    recording: Path,
+    expected: dict[str, Any],
+    *,
+    count: int = REPLAY_COUNT,
+) -> list[dict[str, Any]]:
+    return replay_invocation_times(
+        recording,
+        expected,
+        outcome="success",
+        count=count,
+    )
+
+
 def verify_dap(recording: Path, expected_path: Path) -> str:
+    transcript = GENERATED / "transcripts" / f"{recording.stem}-dap.json"
     result = in_offline_container(
         [
             "python",
@@ -388,6 +490,8 @@ def verify_dap(recording: Path, expected_path: Path) -> str:
             str(container_path(recording)),
             "--expected",
             str(container_path(expected_path)),
+            "--transcript",
+            str(container_path(transcript)),
         ],
         check=False,
     )
@@ -426,38 +530,47 @@ def read_telemetry_spans() -> list[dict[str, Any]]:
     raise AssertionError("Microsoft invocation host exported no OTLP spans")
 
 
-def verify_failed_invocation_span(failed: dict[str, Any]) -> dict[str, Any]:
-    recording_id = str(failed["manifest"]["recording_id"])
-    trace_id = str(failed["manifest"]["trace_id"])
-    span_id = str(failed["manifest"]["span_id"])
+def verify_invocation_span(invocation: dict[str, Any]) -> dict[str, Any]:
+    recording_id = str(invocation["manifest"]["recording_id"])
+    trace_id = str(invocation["manifest"]["trace_id"])
+    span_id = str(invocation["manifest"]["span_id"])
     for span in read_telemetry_spans():
         attributes = span.get("attributes", {})
         if attributes.get("retrace.recording.id") != recording_id:
             continue
         if span.get("trace_id") != trace_id or span.get("span_id") != span_id:
             raise AssertionError(f"span/manifest diagnostic join changed: {span}")
-        if attributes.get("microsoft.foundry.call_id") != failed["foundry_call_id"]:
+        if attributes.get("microsoft.foundry.call_id") != invocation["foundry_call_id"]:
             raise AssertionError(f"span Foundry call ID changed: {span}")
-        if attributes.get("retrace.model.decision") != failed["decision"]:
+        if attributes.get("retrace.model.decision") != invocation["decision"]:
             raise AssertionError(f"span model decision changed: {span}")
-        if attributes.get("retrace.application.exception.type") != "AttributeError":
-            raise AssertionError(f"span omitted application exception: {span}")
-        if span.get("status_code") != 2:
-            raise AssertionError(f"failed invocation span was not ERROR: {span}")
+        if invocation["succeeded"]:
+            if "retrace.application.exception.type" in attributes:
+                raise AssertionError(
+                    f"successful invocation span reported an exception: {span}"
+                )
+            if span.get("status_code") == 2:
+                raise AssertionError(f"successful invocation span was ERROR: {span}")
+        else:
+            if attributes.get("retrace.application.exception.type") != "AttributeError":
+                raise AssertionError(f"span omitted application exception: {span}")
+            if span.get("status_code") != 2:
+                raise AssertionError(f"failed invocation span was not ERROR: {span}")
         return span
-    raise AssertionError(
-        f"no exported span correlated failed recording {recording_id!r}"
-    )
+    raise AssertionError(f"no exported span correlated recording {recording_id!r}")
 
 
 def write_selected_proof_manifest(
     *,
-    failed: dict[str, Any],
+    invocation: dict[str, Any],
     selected: Path,
-    failed_span: dict[str, Any],
+    invocation_span: dict[str, Any],
     model: dict[str, Any],
+    outcome: str,
 ) -> Path:
-    manifest = failed["manifest"]
+    if outcome not in {"failure", "success"}:
+        raise ValueError(f"unsupported proof outcome: {outcome}")
+    manifest = invocation["manifest"]
     proof = {
         "schema_version": 1,
         "artifact": {
@@ -471,16 +584,19 @@ def write_selected_proof_manifest(
             "git_sha": manifest["source_git_sha"],
             "worker_sha256": manifest["source_sha256"],
         },
+        "application": {
+            "request_sha256": manifest["request_sha256"],
+        },
         "runtime": {
             "python": manifest["python_version"],
             "retracesoftware": manifest["retracesoftware_version"],
             "retracesoftware_dap": manifest["retracesoftware_dap_version"],
         },
         "model": {
-            "name": failed["model"],
+            "name": invocation["model"],
             "digest": model["digest"],
-            "request_sha256": failed["model_request_sha256"],
-            "response_sha256": failed["model_response_sha256"],
+            "request_sha256": invocation["model_request_sha256"],
+            "response_sha256": invocation["model_response_sha256"],
         },
         "foundry": {
             "call_id": manifest["foundry_call_id"],
@@ -488,11 +604,11 @@ def write_selected_proof_manifest(
             "session_id": manifest["session_id"],
         },
         "telemetry": {
-            "trace_id": failed_span["trace_id"],
-            "span_id": failed_span["span_id"],
+            "trace_id": invocation_span["trace_id"],
+            "span_id": invocation_span["span_id"],
         },
     }
-    path = GENERATED / "recordings" / "selected-failure.proof.json"
+    path = GENERATED / "recordings" / f"selected-{outcome}.proof.json"
     write_manifest(path, proof)
     return path
 
@@ -501,12 +617,17 @@ def write_results(
     *,
     model: dict[str, Any],
     live: list[dict[str, Any]],
-    replay_proof: list[dict[str, Any]],
-    selected: Path,
+    successful: dict[str, Any],
+    failure_replay_proof: list[dict[str, Any]],
+    success_replay_proof: list[dict[str, Any]],
+    selected_failure: Path,
+    selected_success: Path,
     counter_before: int,
     counter_after: int,
     failed_span: dict[str, Any],
-    proof_manifest: Path,
+    successful_span: dict[str, Any],
+    failure_proof_manifest: Path,
+    success_proof_manifest: Path,
 ) -> None:
     decisions = sorted({str(item["decision"]) for item in live})
     request_hashes = sorted({str(item["model_request_sha256"]) for item in live})
@@ -521,15 +642,22 @@ def write_results(
         "live_invocations": live,
         "distinct_live_decisions": decisions,
         "model_request_sha256_values": request_hashes,
+        "application_request_sha256": failed["manifest"]["request_sha256"],
         "failed_recording_id": failed["manifest"]["recording_id"],
-        "selected_recording": str(selected),
-        "selected_recording_sha256": sha256_file(selected),
-        "selected_proof_manifest": str(proof_manifest),
-        "offline_replays": replay_proof,
+        "successful_recording_id": successful["manifest"]["recording_id"],
+        "selected_failure_recording": str(selected_failure),
+        "selected_failure_recording_sha256": sha256_file(selected_failure),
+        "selected_success_recording": str(selected_success),
+        "selected_success_recording_sha256": sha256_file(selected_success),
+        "selected_failure_proof_manifest": str(failure_proof_manifest),
+        "selected_success_proof_manifest": str(success_proof_manifest),
+        "offline_failure_replays": failure_replay_proof,
+        "offline_success_replays": success_replay_proof,
         "model_calls_before_replay": counter_before,
         "model_calls_after_replay": counter_after,
         "dap": "passed",
         "failed_invocation_span": failed_span,
+        "successful_invocation_span": successful_span,
     }
     (GENERATED / "run-summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n"
@@ -541,12 +669,17 @@ def write_results(
         f"`{item['manifest']['recording_id']}` |"
         for index, item in enumerate(live, start=1)
     )
-    replay_rows = "\n".join(
+    failure_replay_rows = "\n".join(
         f"| {item['replay']} | {item['review_score']} | `{item['decision']}` | "
         f"`{item['exception_type']}` | `{item['output_sha256'][:16]}` | yes |"
-        for item in replay_proof
+        for item in failure_replay_proof
     )
-    report = f"""# Retrace Model-Dependent Runtime Failure Proof
+    success_replay_rows = "\n".join(
+        f"| {item['replay']} | {item['review_score']} | `{item['decision']}` | "
+        f"`{item['output_sha256'][:16]}` | yes |"
+        for item in success_replay_proof
+    )
+    report = f"""# Retrace Model-Dependent Execution Comparison
 
 ## Result
 
@@ -554,18 +687,23 @@ The complete proof passed on Python 3.12.13 with the real local
 `{OLLAMA_MODEL}` model and Microsoft's Hosted Agent Invocations adapter.
 
 - Identical live application and model input: yes
+- Identical worker-request hash: `{failed["manifest"]["request_sha256"]}`
 - Identical exact model request hash: `{request_hashes[0]}`
 - Distinct live model decisions: {", ".join(f"`{item}`" for item in decisions)}
 - Genuine model-selected failure observed: `request_more_information`
 - Preserved exception: `{failed["failure"]["exception_type"]}: {failed["failure"]["exception_message"]}`
+- Preserved successful route: `{successful["decision"]}`
 - Every live invocation recorded separately: yes
-- Selected failed recording: `{selected}`
-- Offline failed replays: {len(replay_proof)} of {REPLAY_COUNT} exact matches
+- Selected failed recording: `{selected_failure}`
+- Selected successful recording: `{selected_success}`
+- Offline failed replays: {len(failure_replay_proof)} of {REPLAY_COUNT} exact matches
+- Offline successful replays: {len(success_replay_proof)} of {REPLAY_COUNT} exact matches
 - Model calls during replay: {counter_after - counter_before}
 - Docker replay network: disabled
 - OTel trace/span, Foundry call/session, and recording manifest correlated: yes
-- Verifiable recording provenance manifest: `{proof_manifest}`
-- DAP failure stack, scopes, locals and reverse navigation: passed
+- Failed recording provenance manifest: `{failure_proof_manifest}`
+- Successful recording provenance manifest: `{success_proof_manifest}`
+- DAP failure and success stack, scopes, locals and routing checks: passed
 
 ## Foundry Trace And Retrace Recording
 
@@ -593,7 +731,17 @@ route, failing line and exception.
 
 | Replay | Score | Route | Exception | Observation hash | Exact match |
 | ---: | ---: | --- | --- | --- | --- |
-{replay_rows}
+{failure_replay_rows}
+
+## Successful Invocation Replayed Offline
+
+The successful trace has the same application input and model-request hash as
+the failed trace. Its historical model response selected a different route,
+which completed without reading the missing serial number.
+
+| Replay | Score | Route | Observation hash | Exact match |
+| ---: | ---: | --- | --- | --- |
+{success_replay_rows}
 
 ## Debugger Evidence
 
@@ -682,54 +830,96 @@ def main() -> None:
             ):
                 break
         failures = [item for item in live if not item["succeeded"]]
-        if len(decisions) < MINIMUM_DISTINCT_DECISIONS or not failures:
+        successes = [item for item in live if item["succeeded"]]
+        if len(decisions) < MINIMUM_DISTINCT_DECISIONS or not failures or not successes:
             raise AssertionError(
                 f"real model did not expose the rare branch after {len(live)} "
-                f"identical calls: decisions={sorted(decisions)} failures={len(failures)}"
+                f"identical calls: decisions={sorted(decisions)} "
+                f"failures={len(failures)} successes={len(successes)}"
+            )
+        successful = next(
+            (item for item in successes if item["decision"] == "approve_refund"),
+            successes[0],
+        )
+        failed = failures[0]
+        if successful["model_request_sha256"] != failed["model_request_sha256"]:
+            raise AssertionError(
+                "selected success and failure used different model input"
+            )
+        if successful["model_response_sha256"] == failed["model_response_sha256"]:
+            raise AssertionError(
+                "selected success and failure used the same model response"
             )
 
-        heading("4. Stop the model and replay the failed invocation ten times")
-        selected, expected_path = prepare_selected_failure(failures[0])
-        expected = json.loads(expected_path.read_text())
+        heading("4. Preserve one success and one failure, then stop the model")
+        selected_failure, failure_expected_path = prepare_selected_failure(failed)
+        selected_success, success_expected_path = prepare_selected_success(successful)
+        failure_expected = json.loads(failure_expected_path.read_text())
+        success_expected = json.loads(success_expected_path.read_text())
         counter_before = counter_count()
         compose("stop", "model-gateway")
-        replay_proof = replay_failure_times(selected, expected)
+
+        heading("5. Replay both historical invocations ten times offline")
+        failure_replay_proof = replay_failure_times(
+            selected_failure,
+            failure_expected,
+        )
+        success_replay_proof = replay_success_times(
+            selected_success,
+            success_expected,
+        )
         counter_after = counter_count()
         if counter_before != counter_after:
             raise AssertionError(
                 f"replay contacted the model: {counter_before} -> {counter_after}"
             )
 
-        heading("5. Inspect the historical failure through DAP")
-        print(verify_dap(selected, expected_path))
-        print(generate_workspace(selected))
+        heading("6. Inspect both historical routes through DAP")
+        print(verify_dap(selected_failure, failure_expected_path))
+        print(verify_dap(selected_success, success_expected_path))
+        print(generate_workspace(selected_failure))
+        print(generate_workspace(selected_success))
 
         recordings = [
             Path(str(item["manifest"]["recording_path"]).replace("/app/", f"{ROOT}/"))
             for item in live
         ]
         verify_secret_boundary(recordings)
-        failed_span = verify_failed_invocation_span(failures[0])
-        proof_manifest = write_selected_proof_manifest(
-            failed=failures[0],
-            selected=selected,
-            failed_span=failed_span,
+        failed_span = verify_invocation_span(failed)
+        successful_span = verify_invocation_span(successful)
+        failure_proof_manifest = write_selected_proof_manifest(
+            invocation=failed,
+            selected=selected_failure,
+            invocation_span=failed_span,
             model=model,
+            outcome="failure",
+        )
+        success_proof_manifest = write_selected_proof_manifest(
+            invocation=successful,
+            selected=selected_success,
+            invocation_span=successful_span,
+            model=model,
+            outcome="success",
         )
         write_results(
             model=model,
             live=live,
-            replay_proof=replay_proof,
-            selected=selected,
+            successful=successful,
+            failure_replay_proof=failure_replay_proof,
+            success_replay_proof=success_replay_proof,
+            selected_failure=selected_failure,
+            selected_success=selected_success,
             counter_before=counter_before,
             counter_after=counter_after,
             failed_span=failed_span,
-            proof_manifest=proof_manifest,
+            successful_span=successful_span,
+            failure_proof_manifest=failure_proof_manifest,
+            success_proof_manifest=success_proof_manifest,
         )
         if args.archive:
             archive_results(args.archive.resolve())
 
-        heading("6. Proof complete")
+        heading("7. Proof complete")
         print((GENERATED / "DEMO_RESULTS.md").read_text())
     finally:
         if docker_ready:

@@ -1,0 +1,30 @@
+{
+  "decision": {
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "review_score": 70,
+    "decision": "escalate_specialist",
+    "reason": "The request is borderline but meets the necessary criteria for a refund. The damage is visible in a photo, the accessory is not safety-critical, and the user has a clear history of good account performance. However, the partial obscuration of the serial number is a minor issue that could delay processing. A discretionary review score of 70 is assigned, as the case is close to approval but requires some specialist review to ensure full compliance with all policies.",
+    "model": "qwen3:1.7b",
+    "created_at": "2026-08-24T21:20:35.329668397Z",
+    "gateway_response_id": "MODEL-466A717374D5",
+    "model_request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
+    "model_response_sha256": "0cd37b5728ecf3972e4962732cbeb10f8e4bb4428ccc908a6dbd628a53c3c025"
+  },
+  "output": {
+    "action_detail": "send the case to a regulated-equipment specialist",
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "created_at": "2026-08-24T21:20:35.329668397Z",
+    "decision": "escalate_specialist",
+    "gateway_response_id": "MODEL-466A717374D5",
+    "model": "qwen3:1.7b",
+    "model_request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
+    "model_response_sha256": "0cd37b5728ecf3972e4962732cbeb10f8e4bb4428ccc908a6dbd628a53c3c025",
+    "reason": "The request is borderline but meets the necessary criteria for a refund. The damage is visible in a photo, the accessory is not safety-critical, and the user has a clear history of good account performance. However, the partial obscuration of the serial number is a minor issue that could delay processing. A discretionary review score of 70 is assigned, as the case is close to approval but requires some specialist review to ensure full compliance with all policies.",
+    "review_score": 70
+  },
+  "failure": null,
+  "worker_exit_code": 0,
+  "runtime_input": {
+    "serial_number": null
+  }
+}

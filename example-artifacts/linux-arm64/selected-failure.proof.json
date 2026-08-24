@@ -1,13 +1,16 @@
 {
+  "application": {
+    "request_sha256": "76769685d134d0b79b5679d6420b8f4dc73ae4ab39be0b3f7f5fef311f8f1992"
+  },
   "artifact": {
-    "original_recording_id": "decision-582dbd0b-f5f9-4499-aef4-cc5131313592",
-    "original_recording_sha256": "d3dd2e8c473356aa5a401600ed563892ab51e34ee360483c413793908c5e011b",
+    "original_recording_id": "decision-9478d396-44c1-4b88-b455-3cc8ebd19e43",
+    "original_recording_sha256": "f9ca0ab09f74169a7c7935b2deeb745a82ae073825be41c795fef0e30b378a4c",
     "path": "selected-failure.retrace",
     "platform": "linux/arm64",
-    "sha256": "d3dd2e8c473356aa5a401600ed563892ab51e34ee360483c413793908c5e011b"
+    "sha256": "f9ca0ab09f74169a7c7935b2deeb745a82ae073825be41c795fef0e30b378a4c"
   },
   "foundry": {
-    "call_id": "CALL-MODEL-DEMO-04",
+    "call_id": "CALL-MODEL-DEMO-02",
     "session_id": "SESSION-MODEL-DECISION-DEMO",
     "user_id": "USER-MODEL-DECISION-DEMO"
   },
@@ -15,7 +18,7 @@
     "digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
     "name": "qwen3:1.7b",
     "request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
-    "response_sha256": "19a1d220fc3b477f34184b3eb437b25768bdf2d5254af5967e93cb9cac656af2"
+    "response_sha256": "6de7e269111b0a38e5e9a02ed6c6e8cce40563adaa0148a4cb5bcd23bf594abc"
   },
   "runtime": {
     "python": "3.12.13",
@@ -24,11 +27,11 @@
   },
   "schema_version": 1,
   "source": {
-    "git_sha": "f15c699f1a1392184b06ecb763b0898d739b0ff7",
+    "git_sha": "f3588b8bbf20bc2a3793562b6729da252be8b5fe",
     "worker_sha256": "ed4024a446a9f9e50f8a127c302486a6cc43c2b6918d179f3fbc117f72da7b06"
   },
   "telemetry": {
-    "span_id": "f996de5eefa5e956",
-    "trace_id": "b3d16674e4deb67cf44a00d1e5855cd4"
+    "span_id": "95f94ae186c1b5f7",
+    "trace_id": "da62c78ef08080958f79ea5d8ab7e490"
   }
 }

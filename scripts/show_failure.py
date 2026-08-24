@@ -25,14 +25,14 @@ def root_pidfile(recording: Path) -> Path:
     if not index_path.is_file():
         raise RuntimeError(
             "the selected recording has not been extracted; run "
-            "`make replay-example` before `make show-failure`"
+            "`make replay-pair` before replaying a reviewed recording"
         )
     index = json.loads(index_path.read_text())
     pidfile = extracted / f"{int(index['root']['pid'])}.bin"
     if not pidfile.is_file():
         raise RuntimeError(
             f"the selected recording root process is missing: {pidfile}; "
-            "run `make replay-example` again"
+            "run `make replay-pair` again"
         )
     return pidfile
 
@@ -80,7 +80,7 @@ def main() -> None:
     verify_docker()
     if not RECORDING.is_file() or not EXPECTED.is_file():
         raise RuntimeError(
-            "no active selected failure exists; run `make replay-example` first"
+            "no active selected failure exists; run `make replay-pair` first"
         )
     expected = json.loads(EXPECTED.read_text())
     pidfile = root_pidfile(RECORDING)

@@ -250,7 +250,9 @@ replay or DAP is started.
 
 ## Debugger Contract
 
-DAP uses the failed recording and stops on:
+DAP validates both reviewed recordings. In the passing trace it verifies the
+historical request, model response, selected safe route, clean return, Step
+Back, and termination. In the failing trace it additionally stops on:
 
 ```python
 normalized = serial_number.strip()  # RETRACE_MODEL_FAILURE_BREAKPOINT
@@ -275,9 +277,12 @@ protocol and the same replay binary.
 `make run` is the complete stochastic proof. It makes fresh real-model calls
 and must discover both a successful route and the rare failed route.
 
-`make replay-example` uses an architecture-matched, reviewed genuine failed
-artifact captured by that proof. It does not require the model. It validates
-the artifact through offline replay and DAP before the visual walkthrough.
+`make replay-pair` uses an architecture-matched, reviewed genuine passing and
+failing pair captured by that proof. The pair has the same worker input, model
+request, source, runtime, and model digest, but different model responses and
+routes. It does not require the model. It validates both artifacts through
+offline replay and DAP before the visual walkthrough. `make replay-example`
+is retained as an alias.
 
 The bundled replay is an independent convenience path. The fresh-capture path
 remains the primary proof that Retrace records a newly observed model-dependent

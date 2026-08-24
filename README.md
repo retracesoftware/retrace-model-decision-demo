@@ -1,20 +1,122 @@
-# Retrace Model-Dependent Failure Demo
+# Retrace Model-Dependent Decision Demo
 
 This repository demonstrates deterministic recording, replay, and debugging of
 a Python application whose control flow depends on a sampled model response. A
-later model call may not reproduce the same route, so Retrace preserves the
-specific execution that produced the failure.
+later model call may not reproduce the same route, so Retrace preserves both a
+passing execution and the specific execution that produced the failure.
+
+## Compare A Passing And Failing Execution
+
+The repository bundles a reviewed pair captured from fresh invocations of the
+same application case. Both recordings contain:
+
+- the same `serial_number=None` runtime input,
+- the same prompt and exact model-request SHA-256,
+- the same Python application and source hash, and
+- one recorded Python process.
+
+The sampled model responses differ. The passing response selects a safe route.
+The failing response returns score `65`, selects `request_more_information`,
+and exposes the latent `.strip()` assumption.
+
+Prepare, verify, and replay both recordings without Ollama or network access:
+
+```bash
+open -a Docker
+docker info
+make compare
+```
+
+`make compare` performs this sequence:
+
+```text
+make replay-pair
+  -> select the native reviewed success and failure recordings
+  -> verify both SHA/provenance manifests
+  -> require matching model-request hashes and different response hashes
+  -> replay each recording three times with --network none
+  -> validate each historical route through DAP
+  -> generate a VS Code workspace for each recording
+
+make show-success
+  -> replay the passing process through the installed replay command
+  -> print and validate the historical successful output
+
+make show-failure
+  -> replay the failing process through the installed replay command
+  -> print and validate the historical traceback
+```
+
+The comparison answers two separate questions:
+
+1. **Where did `serial_number=None` enter the application?** In both traces it
+   arrives in the recorded worker's `--request-json`, is decoded at
+   `worker/__main__.py:13`, and is visible inside the `request` local.
+2. **Where did behavior diverge?** The recorded HTTP responses contain
+   different model scores. The passing score chooses a safe branch at
+   `worker/decision_agent.py:112`; score `65` chooses the branch at line `114`
+   that reads `serial_number` at line `115` and fails at line `116`.
+
+This is runtime comparison, not automatic value provenance. Retrace preserves
+both executable histories so the input, model result, route, and resulting
+behavior can be inspected in their original executions.
+
+### Compare the pair in VS Code
+
+After `make compare`, open the repository and reopen it in the Dev Container:
+
+```bash
+code .
+```
+
+The failed trace is selected by default. To inspect the passing trace first,
+run these commands in the VS Code Dev Container terminal:
+
+```bash
+python -m scripts.prepare_vscode --recording success
+code --reuse-window /app/generated/recordings/selected-success.code-workspace
+```
+
+1. Set a breakpoint at `worker/__main__.py:13` and start the Python process
+   from the Retrace sidebar.
+2. Step Over once. The decoded `request` local contains
+   `serial_number=None`; this is where the runtime value enters the recorded
+   application.
+3. Restart with only `worker/decision_agent.py:83` enabled. Step Into
+   `route_review_score` and inspect the passing model score.
+4. Continue to `worker/decision_agent.py:112`. The passing route completes
+   without reading the optional serial number.
+
+Now switch to the failed trace from the same Dev Container terminal:
+
+```bash
+python -m scripts.prepare_vscode --recording failure
+code --reuse-window /app/generated/recordings/selected-failure.code-workspace
+```
+
+Repeat the input breakpoint at `worker/__main__.py:13`; the request still has
+`serial_number=None`. At `worker/decision_agent.py:83`, however, the preserved
+model score is `65`. It selects `request_more_information`, reaches the read at
+line `115`, and raises `AttributeError` at line `116`.
+
+The comparison is therefore:
+
+```text
+same worker request + same model request
+  -> passing trace: different recorded model response -> safe route -> exit 0
+  -> failing trace: score 65 -> request_more_information -> None.strip()
+```
 
 ## Quick Presentation Path
 
 Use this section when presenting. The longer sections below explain the
 implementation and provide additional tests.
 
-The repository already contains a genuine failed recording captured during a
-real sampled Qwen invocation. In this workflow, **prepare the incident** means
-selecting the bundled recording for the current Docker architecture, verifying
-it, extracting it, and generating its debugger workspace. It does not create a
-new failure or call Qwen. Ollama is not required for this presentation path.
+The repository already contains genuine passing and failing recordings captured
+during real sampled Qwen invocations. The failure-focused workflow below
+selects the bundled pair for the current Docker architecture, verifies it,
+extracts it, and generates the debugger workspaces. It does not create a new
+failure or call Qwen. Ollama is not required for this presentation path.
 
 For a first-time checkout:
 
@@ -42,9 +144,9 @@ make investigate  # prepare, verify, replay, and print the traceback
 order in that same terminal:
 
 ```text
-make replay-example
-  # select the reviewed recording, verify it, replay it three times offline,
-  # validate DAP, and generate the recording workspace
+make replay-pair
+  # select the reviewed success/failure pair, verify it, replay each trace
+  # three times offline, validate DAP, and generate both workspaces
 
 make show-failure
   # perform another real network-disabled replay and print the complete
@@ -588,10 +690,11 @@ order:
 9. [`external_world/model_gateway.py`](external_world/model_gateway.py): real
    sampled Ollama call during fresh capture.
 
-The model is not instructed to fail, and the failing response is not
+The model is not instructed to fail, and neither bundled response is
 hardcoded. Every fresh invocation sends the same model request, but sampling
-may produce different scores. The bundled recording is one genuine invocation
-in which the returned score naturally selected the buggy middle route.
+may produce different scores. Each architecture-specific bundle is a genuine
+pair from one fresh run: one response naturally selected a safe route and one
+naturally selected the buggy middle route.
 
 ## System Architecture
 
@@ -821,8 +924,8 @@ On a clean checkout, use one host terminal and run:
 make investigate  # prepare, verify, replay, and print the traceback
 ```
 
-This command first runs `make replay-example` to prepare and verify the bundled
-recording. It then runs `make show-failure` to replay the selected worker with
+This command first runs `make replay-pair` to prepare and verify the bundled
+recordings. It then runs `make show-failure` to replay the selected worker with
 Docker networking disabled and print the original decision event, failure
 event, and Python traceback.
 
@@ -831,12 +934,12 @@ but the presentation uses `make investigate` so the traceback appears during
 the first terminal flow:
 
 ```bash
-make replay-example
+make replay-pair
 make show-failure
 ```
 
 Do not run `make show-failure` first on a clean checkout; it expects
-`make replay-example` to have created the active extracted recording under
+`make replay-pair` to have created the active extracted recording under
 `generated/recordings/`. After preparation, `make show-failure` can be repeated
 whenever the traceback needs to be shown again.
 
@@ -931,21 +1034,25 @@ This target is a readable wrapper around two operations:
 
 ```text
 make investigate
-  -> make replay-example
+  -> make replay-pair
   -> make show-failure
 ```
 
-`make replay-example` performs the preparation and automated proof:
+`make replay-pair` performs the preparation and automated proof:
 
 1. builds the pinned Python 3.12 image for Docker's native architecture,
-2. selects the matching reviewed AMD64 or ARM64 recording,
-3. verifies its SHA-256 and provenance manifest,
-4. copies it to `generated/recordings/selected-failure.retrace`,
-5. extracts its recorded process tree into `selected-failure.d/`,
-6. replays the root process three times with `--network none`,
-7. requires the same score, route, exception, traceback location, and exit code,
-8. runs the automated DAP stack, scopes, locals, stepping, and exception tests,
-9. generates `selected-failure.code-workspace` for VS Code.
+2. selects the matching reviewed AMD64 or ARM64 success/failure pair,
+3. verifies both SHA-256 and provenance manifests,
+4. proves both traces share the application request, model request, source,
+   runtime, and model build while preserving different model responses,
+5. copies both traces to `generated/recordings/`,
+6. extracts both recorded processes,
+7. replays each root process three times with `--network none`,
+8. requires the passing output and failing traceback to match their reviewed
+   expectations exactly,
+9. runs outcome-specific DAP stack, scopes, locals, stepping, exception, and
+   termination tests, and
+10. generates both `.code-workspace` files for VS Code.
 
 `make show-failure` then uses the installed `replay` command against the
 extracted root process in one additional `--network none` container. It prints
@@ -1191,8 +1298,8 @@ The exact positioning is:
 
 ## What Is Bundled
 
-The repository contains one reviewed genuine failed recording for each native
-Linux architecture supported by the demo:
+The repository contains one reviewed genuine passing/failing pair for each
+native Linux architecture supported by the demo:
 
 ```text
 example-artifacts/
@@ -1200,12 +1307,18 @@ example-artifacts/
     selected-failure.retrace
     selected-failure.expected.json
     selected-failure.proof.json
-    DEMO_RESULTS.failure.example.md
+    selected-success.retrace
+    selected-success.expected.json
+    selected-success.proof.json
+    DEMO_RESULTS.paired.example.md
   linux-arm64/
     selected-failure.retrace
     selected-failure.expected.json
     selected-failure.proof.json
-    DEMO_RESULTS.failure.example.md
+    selected-success.retrace
+    selected-success.expected.json
+    selected-success.proof.json
+    DEMO_RESULTS.paired.example.md
 ```
 
 Each file has a distinct purpose:
@@ -1216,10 +1329,12 @@ Each file has a distinct purpose:
   exit code, and runtime input that every replay must reproduce.
 - `selected-failure.proof.json` binds the recording SHA-256 to its source
   revision, worker hash, Python and Retrace versions, native platform, model
-  name and digest, request and response hashes, Foundry identifiers, and OTel
-  trace/span identifiers.
-- `DEMO_RESULTS.failure.example.md` is the human-readable report from that
-  reviewed run.
+  name and digest, complete worker-request hash, model request and response
+  hashes, Foundry identifiers, and OTel trace/span identifiers.
+- The corresponding `selected-success.*` files preserve and prove a cleanly
+  completed invocation with the same runtime input and exact model request.
+- `DEMO_RESULTS.paired.example.md` is the human-readable report from the
+  reviewed run that produced both selected artifacts.
 
 Two `.retrace` files are necessary because the recording contains a native
 Linux replay executable. An AMD64 recording is replayed with the AMD64 image,
@@ -1234,15 +1349,17 @@ not inserted into a fixture. Each artifact started as output from the complete
 fresh workflow:
 
 1. `make run` called the real sampled Qwen model with the identical request.
-2. The model naturally returned score `65` and Python selected
-   `request_more_information`.
-3. The recorded worker reached `serial_number=None` and raised the historical
-   `AttributeError` at `.strip()`.
-4. The harness selected that failed invocation and proved ten offline replays,
-   historical DAP state, model-call isolation, telemetry linkage, and artifact
-   integrity.
-5. The recording, expectation, proof manifest, and report were reviewed.
-6. A maintainer promoted them into the appropriate architecture directory
+2. The model naturally produced at least one successful route and the score
+   `65` failure route during repeated identical requests.
+3. The successful worker completed while preserving `serial_number=None`; the
+   failing worker read that value and raised the historical `AttributeError` at
+   `.strip()`.
+4. The harness selected both invocations and proved ten offline replays for
+   each, historical DAP state, model-call isolation, telemetry linkage, matching
+   request hashes, different response hashes, and artifact integrity.
+5. Both recordings, expectations, proof manifests, and the report were
+   reviewed.
+6. A maintainer promoted the pair into the appropriate architecture directory
    with `scripts/promote_reviewed_artifact.py`.
 
 Promotion rechecks the recording SHA, required provenance fields, native
@@ -1273,12 +1390,13 @@ image. The harness then:
 4. creates one fresh recording for every model decision,
 5. requires identical model-request hashes across calls,
 6. waits for different decisions plus a naturally selected failure,
-7. selects that newly captured failed recording,
+7. selects one newly captured passing recording and one failed recording,
 8. stops the model gateway,
-9. replays the recording ten times with `--network none`,
+9. replays each recording ten times with `--network none`,
 10. verifies the model-call counter did not change during replay,
-11. verifies historical stack, scopes, locals, and reverse navigation, and
-12. writes the report, run summary, telemetry join, and proof manifest.
+11. verifies each historical route through stack, scopes, locals, and reverse
+    navigation, and
+12. writes the paired report, run summary, telemetry joins, and proof manifests.
 
 Live sampling is real. A single invocation is not guaranteed to fail. The
 harness allows at most 20 identical calls and fails rather than manufacturing
@@ -1294,10 +1412,11 @@ replay=10 ... network=none match=yes
 dap=pass ...
 ```
 
-The fresh selected recording is written to:
+The fresh selected recordings are written to:
 
 ```text
 generated/recordings/selected-failure.retrace
+generated/recordings/selected-success.retrace
 ```
 
 ## Replay The Bundled Historical Example
@@ -1305,28 +1424,30 @@ generated/recordings/selected-failure.retrace
 To prepare and verify replay and DAP without calling the model:
 
 ```bash
-make replay-example
+make replay-pair
 ```
 
 Expected evidence includes:
 
 ```text
-replay_example=reviewed-genuine-failed-invocation
+replay_example=reviewed-genuine-success-and-failure
 docker_architecture=arm64  # or amd64
-historical_model=score:65 route:request_more_information
-historical_failure=AttributeError: 'NoneType' object has no attribute 'strip'
+model_request_sha256=...
+historical_success=score:... route:<approve_refund-or-escalate_specialist> recording:...
+historical_failure=score:65 route:request_more_information exception:AttributeError recording:...
+success-replay=01 ... network=none match=yes
 replay=01 ... network=none match=yes
-replay=02 ... network=none match=yes
-replay=03 ... network=none match=yes
-dap=pass ...
-proof=pass ...
-replay_example=ready
+dap=pass outcome=success ...
+dap=pass failure=historical ...
+success_proof=pass ...
+failure_proof=pass ...
+replay_pair=ready
 ```
 
-The command verifies that the bundled recording matches its provenance
-manifest before executing it. The recording contains a genuine historical
-model response; replay supplies that recorded response rather than contacting
-Qwen.
+The command verifies that both bundled recordings match their provenance
+manifests before executing either. Each recording contains its genuine
+historical model response; replay supplies that recorded response rather than
+contacting Qwen.
 
 To run the selected process once more and display its complete application
 traceback:
@@ -1350,12 +1471,12 @@ To perform both operations with one command:
 make investigate
 ```
 
-### What `make replay-example` does
+### What `make replay-pair` does
 
 The Make target expands to:
 
 ```text
-make replay-example
+make replay-pair
   -> make preflight
   -> make build
   -> python3 -m scripts.run_replay_example
@@ -1369,23 +1490,23 @@ The workflow then performs these steps in order:
 3. Clears old files beneath `generated/` so stale results cannot satisfy the
    run.
 4. Reads Docker's architecture and selects `linux-amd64` or `linux-arm64`.
-5. Verifies the bundled recording's SHA-256, platform, source revision,
-   runtime versions, model hashes, Foundry IDs, and telemetry IDs.
-6. Copies the reviewed recording, expectation, proof, and report into
-   `generated/` as the active example.
-7. Extracts the recording and reads `index.json` to find the recorded root
+5. Verifies both recordings' SHA-256, platform, source revision, runtime
+   versions, model hashes, invocation identifiers, and telemetry identifiers.
+6. Requires the pair to have identical runtime input and model-request hashes,
+   but different model-response hashes and routes.
+7. Copies both recordings, expectations, proofs, and the paired report into
+   `generated/`.
+8. Extracts each recording and reads its `index.json` to find the recorded root
    Python process.
-8. Starts three independent replay containers with `--network none`.
-9. Requires every replay to reproduce the exact model decision, score,
-   exception type, exception message, traceback location, and worker exit
-   code stored in `selected-failure.expected.json`.
-10. Runs the DAP verifier against the same recording.
-11. Verifies a real initial source-breakpoint stop, stack, scopes, historical
-    locals, raised-exception stopping, Step Back, forward return, clean
-    no-breakpoint termination, truthful capability handling, and Step Into
-    across the exception unwind without exposing an artificial source-less
-    frame.
-12. Generates `selected-failure.code-workspace` for visual debugging.
+9. Starts three independent `--network none` replays for each recording.
+10. Requires the passing replays to preserve their decision, output, and zero
+    exit code, and the failing replays to preserve their decision, traceback,
+    exception, and exit code.
+11. Runs outcome-specific DAP verification against both recordings. The
+    passing check inspects the input and safe route; the failing check inspects
+    the exception state, reverse execution, and exception unwind.
+12. Generates `selected-success.code-workspace` and
+    `selected-failure.code-workspace` for visual comparison.
 
 The historical worker is expected to exit with code `1` because it reproduces
 the recorded application failure. The surrounding verification command exits
@@ -1402,7 +1523,7 @@ This workflow deliberately does not:
 
 ### Files produced by the bundled workflow
 
-After `make replay-example`, the important active files are:
+After `make replay-pair`, the important active files are:
 
 ```text
 generated/DEMO_RESULTS.md
@@ -1412,13 +1533,22 @@ generated/recordings/selected-failure.proof.json
 generated/recordings/selected-failure.code-workspace
 generated/recordings/selected-failure.d/index.json
 generated/recordings/selected-failure.d/<root-pid>.bin
+generated/recordings/selected-success.retrace
+generated/recordings/selected-success.expected.json
+generated/recordings/selected-success.proof.json
+generated/recordings/selected-success.code-workspace
+generated/recordings/selected-success.d/index.json
+generated/recordings/selected-success.d/<root-pid>.bin
 generated/replay/replay-01.log
 generated/replay/replay-02.log
 generated/replay/replay-03.log
+generated/replay/success-replay-01.log
+generated/replay/success-replay-02.log
+generated/replay/success-replay-03.log
 generated/replay/presentation-traceback.log  # after make show-failure
-generated/transcripts/dap.json
-generated/transcripts/dap-raised.json
-generated/transcripts/dap-no-breakpoint.json
+generated/replay/presentation-success.log    # after make show-success
+generated/transcripts/selected-failure-dap.json
+generated/transcripts/selected-success-dap.json
 ```
 
 The `.retrace` file is the original selected artifact. The `.d/` directory is
@@ -1432,18 +1562,23 @@ response, and event exchanges used by the automated checks.
 These lines establish different parts of the proof:
 
 ```text
-proof=pass ...
+success_proof=pass ...
+failure_proof=pass ...
 ```
 
-The committed recording matches the provenance manifest and native platform.
+Both committed recordings match their provenance manifests and native
+platform, and the paired verifier has accepted their shared inputs and distinct
+model responses.
 
 ```text
+success-replay=01 ... network=none match=yes
 replay=01 ... network=none match=yes
 ```
 
-The replay had no network and reproduced the exact reviewed decision, failure,
-and exit code. The same requirement is applied independently to all three
-replays.
+The replays had no network. One reproduced the exact reviewed successful
+decision, output, and zero exit code; the other reproduced the reviewed
+decision, failure, and nonzero exit code. The same requirement is applied
+independently to all three replays of each trace.
 
 ```text
 dap=pass ... entry_stop=real ... locals=pass ...
@@ -1453,10 +1588,10 @@ The debugger reached a real inspectable historical stop and satisfied the DAP
 state, inspection, exception, and reverse-navigation checks.
 
 ```text
-replay_example=ready
+replay_pair=ready
 ```
 
-All verification completed and the recording is ready for VS Code.
+All verification completed and both recordings are ready for VS Code.
 
 ## Debug Either Recording In VS Code
 
@@ -1720,7 +1855,7 @@ that turn those commands into a repeatable demonstration.
 ```text
 make investigate
   |
-  +-- make replay-example
+  +-- make replay-pair
   |     |
   |     +-- python3 -m scripts.preflight
   |     |     `-- docker info
@@ -1732,12 +1867,13 @@ make investigate
   |           +-- reset generated/
   |           +-- detect Docker architecture
   |           +-- select example-artifacts/linux-<architecture>/
-  |           +-- verify recording SHA and proof manifest
-  |           +-- copy recording into generated/recordings/
-  |           +-- extract the .retrace process tree
-  |           +-- replay root process 3 times with --network none
-  |           +-- run scripts/verify_dap.py
-  |           `-- retrace-dap --recording ... --workspace
+  |           +-- verify both recording SHAs and proof manifests
+  |           +-- prove equal inputs and different model responses
+  |           +-- copy both recordings into generated/recordings/
+  |           +-- extract both .retrace process trees
+  |           +-- replay each root process 3 times with --network none
+  |           +-- run success and failure DAP checks
+  |           `-- generate both recording workspaces
   |
   `-- make show-failure
         |
@@ -1773,14 +1909,14 @@ make run
         +-- POST identical requests to /invocations
         +-- create one retracepython worker and recording per request
         +-- stop after distinct decisions, one success, and one failure exist
-        +-- select the first natural failure
+        +-- select one natural success and the first natural failure
         +-- stop model-gateway
-        +-- replay the failure 10 times with --network none
+        +-- replay both executions 10 times with --network none
         +-- prove the model-call counter did not increase
-        +-- run the DAP verifier
-        +-- generate the VS Code workspace
+        +-- run both DAP verifiers
+        +-- generate both VS Code workspaces
         +-- verify OTel/recording correlation and secret isolation
-        +-- write the proof manifest and reports
+        +-- write both proof manifests and the paired report
         `-- stop this demo's Compose services
 ```
 
@@ -1808,7 +1944,8 @@ the evidence produced by the agent and worker.
 | File | Invoked by | Technical responsibility |
 | --- | --- | --- |
 | `scripts/run_demo.py` | `make run` through `make demo` | Orchestrates the complete fresh model workflow and verifies every claim: identical request hashes, route variation, natural failure, ten offline replays, no replay-time model calls, DAP behavior, telemetry correlation, provenance, and final reports. |
-| `scripts/run_replay_example.py` | `make replay-example` | Selects the native reviewed artifact, verifies its proof, copies it into the active generated area, runs three offline replays, invokes the DAP verifier, and generates the VS Code workspace. |
+| `scripts/run_replay_example.py` | `make replay-pair` | Selects the native reviewed success/failure pair, verifies both proofs and comparability constraints, runs three offline replays of each, invokes both DAP checks, and generates both VS Code workspaces. |
+| `scripts/show_success.py` | `make show-success` | Runs one explicit terminal replay of the passing trace, validates its historical decision, output, and zero exit code, and writes the presentation success log. |
 | `scripts/show_failure.py` | `make show-failure` | Runs one explicit terminal replay through the installed `replay` command, prints the complete traceback, validates it against the expected result, and writes the presentation log. |
 | `scripts/verify_dap.py` | Both replay workflows and Dev Container setup | Acts as a DAP client. It launches `retrace-dap`, sends protocol requests, and verifies source breakpoint stops, stack, scopes, locals, raised exceptions, clean termination, Step Back, forward execution, and Step Into across exception unwind. It is verification code, not part of the recorded application. |
 | `scripts/prepare_vscode.py` | `make vscode` and Dev Container `postCreateCommand` | Selects a compatible active or bundled recording, verifies it, extracts it, generates the `.code-workspace`, and runs the DAP preflight before interactive use. |
@@ -1818,7 +1955,7 @@ the evidence produced by the agent and worker.
 | `scripts/platforms.py` | Replay and promotion scripts | Normalizes AMD64/ARM64 names, detects Docker's native architecture, and selects the matching reviewed recording directory. |
 | `scripts/proof_manifest.py` | Replay and VS Code preparation | Verifies recording SHA-256, required provenance fields, and native platform before an artifact is used. |
 | `scripts/reset_demo.py` | `make prepare` and `make clean` | Clears generated demo state without deleting source or unrelated Docker data. |
-| `scripts/promote_reviewed_artifact.py` | Maintainer command | Revalidates a freshly generated failure and copies its recording, expectation, proof, and report into the architecture-specific committed artifact directory. |
+| `scripts/promote_reviewed_artifact.py` | Maintainer command | Revalidates a freshly generated comparable success/failure pair and copies both recordings, expectations, proofs, and report into the architecture-specific committed artifact directory. |
 | `scripts/verify_foundry_lifecycle.py` | `make lifecycle` | Tests process shutdown while a recorded worker is in flight, then verifies durable artifact publication and replay after the external service stops. |
 | `scripts/lifecycle_model_gateway.py` | Lifecycle verifier only | Provides a delayed deterministic HTTP service used to put the lifecycle test at a known in-flight boundary. It is not used by `make run`. |
 
@@ -1839,7 +1976,8 @@ The split keeps the proof boundaries explicit:
 - Runtime code under `agent/` and `worker/` is the system being demonstrated.
 - `external_world/` is deliberately outside the recorded process.
 - `scripts/run_demo.py` is the live experiment controller.
-- `scripts/run_replay_example.py` is the deterministic artifact verifier.
+- `scripts/run_replay_example.py` is the deterministic paired-artifact verifier.
+- `scripts/show_success.py` exposes the passing execution used for comparison.
 - `scripts/show_failure.py` exposes the normal Python traceback used to begin
   interactive investigation.
 - `scripts/verify_dap.py` checks debugger behavior independently of the VS Code
@@ -1855,10 +1993,13 @@ and the test harness that verifies the result.
 
 | Command | What it does |
 | --- | --- |
-| `make investigate` | Recommended incident walkthrough. Runs `replay-example`, then performs one additional network-disabled replay and prints the full historical traceback that leads into the VS Code investigation. |
-| `make run` | Runs `preflight`, pulls the pinned Qwen model, executes fresh real-model invocations, creates new recordings, selects a natural failure, performs ten network-disabled replays, validates DAP, and writes the complete proof set. |
-| `make replay-example` | Builds the native image, selects and verifies the architecture-matched bundled recording, performs three network-disabled replays, validates DAP, and generates the VS Code workspace. It makes no model call and creates no recording. |
-| `make show-failure` | Replays the active selected root process through the installed `replay` CLI with networking disabled, prints and validates the complete historical traceback, and saves `presentation-traceback.log`. Run `replay-example` first. |
+| `make compare` | Recommended paired walkthrough. Prepares the passing/failing pair, then prints the network-disabled passing output followed by the divergent historical traceback. |
+| `make investigate` | Failure-focused walkthrough. Runs `replay-pair`, then performs one additional network-disabled failure replay and prints the full traceback that leads into VS Code. |
+| `make run` | Pulls Qwen, executes fresh identical real-model invocations, preserves one genuine success and one genuine failure, replays each ten times without networking, validates both through DAP, and writes the paired proof set. |
+| `make replay-pair` | Builds the native image, selects and verifies both architecture-matched bundled recordings, replays each three times without networking, validates both through DAP, and generates both VS Code workspaces. It makes no model call and creates no recording. |
+| `make replay-example` | Backwards-compatible alias for `make replay-pair`. |
+| `make show-success` | Replays the active passing root process through the installed `replay` CLI without networking, validates its decision/output/exit code, and saves `presentation-success.log`. Run `replay-pair` first. |
+| `make show-failure` | Replays the active failing root process through the installed `replay` CLI without networking, validates the complete traceback, and saves `presentation-traceback.log`. Run `replay-pair` first. |
 | `make presentation` | Compatibility alias for the complete `make investigate` flow. New instructions use the clearer `make investigate` name. |
 
 ### Setup and service control
@@ -1883,6 +2024,7 @@ and the test harness that verifies the result.
 | `make test` | Runs Ruff linting, Ruff formatting checks, and the Python test suite inside the pinned image. It does not call the model. |
 | `make lifecycle` | Sends `SIGTERM` while a model request is in flight and proves graceful drain, durable recording publication, clean server exit, and replay after shutdown. |
 | `make vscode` | Selects a compatible failed recording, verifies its proof, extracts and indexes it, creates the `.code-workspace`, and runs the DAP preflight. The Dev Container runs the same preparation automatically. |
+| `make vscode-success` | Performs the same VS Code and DAP preparation for the reviewed passing recording. |
 | `make clean` | Stops this demo's Compose services, removes only this demo's Compose volumes, and clears generated demo output. It does not run a global Docker prune. |
 
 ## Architecture And Presentation Script
@@ -1909,8 +2051,8 @@ The bundled replay does not require Ollama.
 ### The live model does not select the rare route
 
 This is genuine sampling. The proof makes up to 20 identical calls and fails
-without manufacturing a score. Use `make replay-example` to inspect the
-bundled genuine failed invocation without waiting for fresh sampling.
+without manufacturing a score. Use `make replay-pair` to inspect the bundled
+genuine passing/failing pair without waiting for fresh sampling.
 
 ### Docker consumes excessive resources on Apple Silicon
 

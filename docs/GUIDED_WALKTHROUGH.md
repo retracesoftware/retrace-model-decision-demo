@@ -158,7 +158,7 @@ execution that consumed it. It does not contain a hidden model chain-of-thought
 or Ollama's token-generation internals. The visible model reason, score, model
 metadata, downstream locals, route, and exception are all inspectable.
 
-## Prepare The Historical Incident
+## Prepare The Historical Pair And Incident
 
 From the repository root, use one host terminal and run:
 
@@ -173,15 +173,19 @@ here before VS Code is opened. No second terminal is part of the walkthrough.
 
 `make investigate` does two things.
 
-First, `make replay-example`:
+First, `make replay-pair`:
 
 - builds the pinned Python 3.12 image,
-- selects the bundled recording for Docker's native architecture,
-- verifies the recording SHA and provenance manifest,
-- extracts the recorded root process,
-- replays it three times with networking disabled,
-- checks stack, scopes, locals, exception behavior, Step Back, and Step Into,
-- creates the VS Code recording workspace.
+- selects the bundled passing and failing recordings for Docker's native
+  architecture,
+- verifies both recording SHAs and provenance manifests,
+- proves that they share the same worker input and model request while their
+  recorded model responses and routes differ,
+- extracts both recorded root processes,
+- replays each one three times with networking disabled,
+- checks stack, scopes, locals, route behavior, clean termination, exception
+  behavior, Step Back, and Step Into,
+- creates both VS Code recording workspaces.
 
 Second, `make show-failure`:
 

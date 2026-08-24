@@ -3,14 +3,14 @@
     "request_sha256": "76769685d134d0b79b5679d6420b8f4dc73ae4ab39be0b3f7f5fef311f8f1992"
   },
   "artifact": {
-    "original_recording_id": "decision-50f5dc8f-2863-42da-92fa-f3daf6add69b",
-    "original_recording_sha256": "2b08acfd1357cea07fa94f3ef5da692c2ffb5e2a26d53f11339991182a26930d",
-    "path": "selected-failure.retrace",
-    "platform": "linux/amd64",
-    "sha256": "2b08acfd1357cea07fa94f3ef5da692c2ffb5e2a26d53f11339991182a26930d"
+    "original_recording_id": "decision-b2799298-978f-4d41-853d-3f3d641c2537",
+    "original_recording_sha256": "b1c4fb94b2b8fd4571c1c3164722e80e7c9a029e72e788eb5819852860075392",
+    "path": "selected-success.retrace",
+    "platform": "linux/arm64",
+    "sha256": "b1c4fb94b2b8fd4571c1c3164722e80e7c9a029e72e788eb5819852860075392"
   },
   "foundry": {
-    "call_id": "CALL-MODEL-DEMO-02",
+    "call_id": "CALL-MODEL-DEMO-01",
     "session_id": "SESSION-MODEL-DECISION-DEMO",
     "user_id": "USER-MODEL-DECISION-DEMO"
   },
@@ -18,7 +18,7 @@
     "digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
     "name": "qwen3:1.7b",
     "request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
-    "response_sha256": "58fb485cf20e5ae7b141f99a68f6989d96ad586976d549c6ffb073b110f8d47e"
+    "response_sha256": "0cd37b5728ecf3972e4962732cbeb10f8e4bb4428ccc908a6dbd628a53c3c025"
   },
   "runtime": {
     "python": "3.12.13",
@@ -31,7 +31,7 @@
     "worker_sha256": "ed4024a446a9f9e50f8a127c302486a6cc43c2b6918d179f3fbc117f72da7b06"
   },
   "telemetry": {
-    "span_id": "057a554ad648ab40",
-    "trace_id": "da62c78ef08080958f79ea5d8ab7e490"
+    "span_id": "1ea0df2aa56ac967",
+    "trace_id": "17fe6f303311c0b164b937e419518c1f"
   }
 }

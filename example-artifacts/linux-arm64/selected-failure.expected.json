@@ -3,12 +3,12 @@
     "case_id": "CASE-MODEL-NONDETERMINISM-001",
     "review_score": 65,
     "decision": "request_more_information",
-    "reason": "The request is genuine but requires a specialist review due to the partial obscuration of the serial number and the need for verification of the damage. However, since the issue is relatively simple and the request does not involve policy violations, a discretionary review is appropriate but not mandated. The score is 65.",
+    "reason": "The refund request is timely, the damage is documented, and the customer history is favorable. The accessory is not safety-critical, but the damage affects its usability. The request is not policy-mandated, and the damage can be resolved with a corrective action.",
     "model": "qwen3:1.7b",
-    "created_at": "2026-08-24T18:35:14.801004396Z",
-    "gateway_response_id": "MODEL-08A8042771DF",
+    "created_at": "2026-08-24T21:20:38.658295999Z",
+    "gateway_response_id": "MODEL-A95373D13878",
     "model_request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
-    "model_response_sha256": "19a1d220fc3b477f34184b3eb437b25768bdf2d5254af5967e93cb9cac656af2"
+    "model_response_sha256": "6de7e269111b0a38e5e9a02ed6c6e8cce40563adaa0148a4cb5bcd23bf594abc"
   },
   "failure": {
     "exception_type": "AttributeError",

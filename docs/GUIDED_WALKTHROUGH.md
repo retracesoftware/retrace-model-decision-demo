@@ -88,6 +88,76 @@ This separation is important. The model response is valid, and the application
 contains a latent route-specific bug. Non-determinism determines whether that
 bug is reached on a particular invocation.
 
+### Separate the application from the demo controller
+
+Before presenting, distinguish the code being investigated from the code that
+runs the experiment:
+
+| Code | Purpose |
+| --- | --- |
+| `agent/` | The incoming invocation service and per-invocation worker launcher. |
+| `worker/` | The application being recorded and debugged. It calls the model boundary, validates the response, chooses a route, and fails. |
+| `external_world/` | The model gateway and telemetry collector outside the recorded worker. |
+| `scripts/` and `Makefile` | The controller and assertions used to prepare, repeat, and prove the demo. They are not the business application. |
+
+The refund is a routing example, not a payment integration. Successful routes
+return action descriptions; they do not transfer money or modify an account.
+The point is to make a real model-dependent Python control-flow problem small
+enough to inspect completely.
+
+### Follow one invocation through the source
+
+Use this sequence to explain the code before introducing Retrace:
+
+1. `scripts/demo_state.py` defines `case_id`, `serial_number=None`, and the
+   case prose in `user_prompt`.
+2. `scripts/agent_client.py` sends the prose to the local `/invocations`
+   endpoint with call, user, and trace-context headers.
+3. `agent/main.py` merges that input with the fixed structured case and asks
+   `agent/invocation_runner.py` to run one worker.
+4. `agent/invocation_runner.py` assigns a recording ID and launches
+   `retracepython -m worker --request-json ...`.
+5. `worker/__main__.py` decodes the request and calls
+   `run_decision_agent()`.
+6. `worker/decision_agent.py` creates a system message, the case message, and
+   a strict JSON schema requiring `review_score` and `reason`.
+7. `worker/model_client.py` and `worker/http_json.py` POST that request to the
+   model gateway. `urlopen()` is the external boundary observed by the worker.
+8. `external_world/model_gateway.py` asks the real sampled Qwen model and
+   returns its response plus identifiers and hashes.
+9. `parse_model_assessment()` validates the response, and
+   `route_review_score()` maps the integer score to a Python action.
+10. The score-65 invocation selects `request_more_information`; that branch
+    reads `serial_number=None` and calls `.strip()`, raising `AttributeError`.
+11. `worker/__main__.py` emits failure metadata and re-raises, producing the
+    traceback and exit code `1`.
+12. The invocation runner saves the recording, stdout, stderr, and manifest;
+    the agent endpoint returns HTTP `500` with the recording ID.
+
+The relevant data changes are:
+
+```text
+fixed case prose
+  -> Qwen message content: {"review_score": 65, "reason": "..."}
+  -> parse_model_assessment(): (65, "...")
+  -> route_review_score(65): "request_more_information"
+  -> request["serial_number"]: None
+  -> None.strip(): AttributeError
+```
+
+Say:
+
+> Qwen does not return an exception or a route name. It returns a valid score
+> and reason. Ordinary deterministic Python converts that score into a route.
+> The application contains an unsafe assumption in only one route, so later
+> sampled calls can choose a successful route and hide the original incident.
+> The recording lets us investigate the invocation that actually mattered.
+
+The recording contains the exact HTTP result seen by the worker and the Python
+execution that consumed it. It does not contain a hidden model chain-of-thought
+or Ollama's token-generation internals. The visible model reason, score, model
+metadata, downstream locals, route, and exception are all inspectable.
+
 ## Prepare The Historical Incident
 
 From the repository root, run:

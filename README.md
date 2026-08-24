@@ -690,10 +690,11 @@ order:
 9. [`external_world/model_gateway.py`](external_world/model_gateway.py): real
    sampled Ollama call during fresh capture.
 
-The model is not instructed to fail, and the failing response is not
+The model is not instructed to fail, and neither bundled response is
 hardcoded. Every fresh invocation sends the same model request, but sampling
-may produce different scores. The bundled recording is one genuine invocation
-in which the returned score naturally selected the buggy middle route.
+may produce different scores. Each architecture-specific bundle is a genuine
+pair from one fresh run: one response naturally selected a safe route and one
+naturally selected the buggy middle route.
 
 ## System Architecture
 
@@ -1432,7 +1433,7 @@ Expected evidence includes:
 replay_example=reviewed-genuine-success-and-failure
 docker_architecture=arm64  # or amd64
 model_request_sha256=...
-historical_success=score:... route:approve_refund recording:...
+historical_success=score:... route:<approve_refund-or-escalate_specialist> recording:...
 historical_failure=score:65 route:request_more_information exception:AttributeError recording:...
 success-replay=01 ... network=none match=yes
 replay=01 ... network=none match=yes

@@ -1,0 +1,30 @@
+{
+  "decision": {
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "review_score": 60,
+    "decision": "approve_refund",
+    "reason": "The request is straightforward and meets the necessary criteria for a refund. The damaged accessory is not safety-critical and there is a photo supporting the claim. The account history is clean and there are no earlier refunds. A discretionary review score of 60 is given, indicating a recommendable action but requiring specialist review due to the complexity of the claim.",
+    "model": "qwen3:1.7b",
+    "created_at": "2026-08-24T21:19:25.680919712Z",
+    "gateway_response_id": "MODEL-5CFB2074C0EF",
+    "model_request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
+    "model_response_sha256": "a3d4a75335325576149dd119a4e5461538b9237e1d47a28cf616ba42079681eb"
+  },
+  "output": {
+    "action_detail": "refund approved from the available evidence",
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "created_at": "2026-08-24T21:19:25.680919712Z",
+    "decision": "approve_refund",
+    "gateway_response_id": "MODEL-5CFB2074C0EF",
+    "model": "qwen3:1.7b",
+    "model_request_sha256": "8f3d00729a8e1f4f9441847f79bbda3d3d422d6d354eb29ca4e43ad407dc656b",
+    "model_response_sha256": "a3d4a75335325576149dd119a4e5461538b9237e1d47a28cf616ba42079681eb",
+    "reason": "The request is straightforward and meets the necessary criteria for a refund. The damaged accessory is not safety-critical and there is a photo supporting the claim. The account history is clean and there are no earlier refunds. A discretionary review score of 60 is given, indicating a recommendable action but requiring specialist review due to the complexity of the claim.",
+    "review_score": 60
+  },
+  "failure": null,
+  "worker_exit_code": 0,
+  "runtime_input": {
+    "serial_number": null
+  }
+}

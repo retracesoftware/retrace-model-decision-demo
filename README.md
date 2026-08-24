@@ -5,9 +5,131 @@ a Python application whose control flow depends on a sampled model response. A
 later model call may not reproduce the same route, so Retrace preserves the
 specific execution that produced the failure.
 
+## Quick Presentation Path
+
+Use this section when presenting. The longer sections below explain the
+implementation and provide additional tests.
+
+The repository already contains a genuine failed recording captured during a
+real sampled Qwen invocation. In this workflow, **prepare the incident** means
+selecting the bundled recording for the current Docker architecture, verifying
+it, extracting it, and generating its debugger workspace. It does not create a
+new failure or call Qwen. Ollama is not required for this presentation path.
+
+For a first-time checkout:
+
+```bash
+git clone https://github.com/retracesoftware/retrace-model-decision-demo.git
+cd retrace-model-decision-demo
+code --install-extension ms-vscode-remote.remote-containers
+```
+
+The Retrace VS Code extension is installed automatically inside the Dev
+Container.
+
+### 1. Prepare the recording and show the failure
+
+From the repository root:
+
+```bash
+docker info
+make investigate
+```
+
+`make investigate` runs these two targets in order:
+
+```text
+make replay-example   # verify, copy, extract, replay, and prepare VS Code
+make show-failure     # replay once more and print the complete traceback
+```
+
+The expected application failure appears in the terminal:
+
+```text
+File "/app/worker/decision_agent.py", line 116, in run_decision_agent
+  normalized = serial_number.strip()
+AttributeError: 'NoneType' object has no attribute 'strip'
+```
+
+The traceback is also saved at:
+
+```bash
+cat generated/replay/presentation-traceback.log
+```
+
+At this point you have completed the first two parts of the story:
+
+```text
+historical failed invocation
+  -> deterministic terminal replay
+  -> real Python traceback identifies decision_agent.py:116
+```
+
+### 2. Open that same execution in VS Code
+
+```bash
+code .
+```
+
+In VS Code:
+
+1. Open the Command Palette.
+2. Select **Dev Containers: Reopen in Container**.
+3. Wait for the status bar to show **Retrace Model Decision Demo**.
+4. Open `/app/worker/decision_agent.py`.
+5. Set one breakpoint on line `116`, at `serial_number.strip()`.
+6. Click the Retrace icon in the left activity bar.
+7. Click Play beside the Python process under `selected-failure.retrace`.
+8. Wait for replay to stop automatically at line `116`; do not press Continue
+   before the first stop.
+
+Inspect Locals and show:
+
+```text
+serial_number = None
+review_score = 65
+decision_name = "request_more_information"
+```
+
+Terminal replay and VS Code are using the same
+`generated/recordings/selected-failure.retrace` artifact.
+
+### 3. Follow the cause backward
+
+Restart replay with only line `83` enabled. Step Into
+`route_review_score(review_score)` and show:
+
+```text
+65 < 65 -> false
+65 < 70 -> true
+route -> request_more_information
+```
+
+Restart with only line `82` enabled. Step Into
+`parse_model_assessment(raw_model_response)` and show that `review_score=65`
+came from the preserved model response.
+
+Optionally restart with only `worker/http_json.py:21` enabled. Step Over
+`urlopen()`. The response returns while the gateway is stopped and replay has
+no network, proving that Retrace supplies the recorded historical HTTP result.
+
+The presentation story is therefore:
+
+```text
+1. Reproduce and show the historical failure.
+2. Use its traceback to choose the first debugger location.
+3. Inspect the exact historical value that caused it.
+4. Follow the route backward to the preserved model response.
+5. Prove the model was not called again during replay.
+```
+
+For the spoken explanation and additional debugger operations, use
+[`docs/GUIDED_WALKTHROUGH.md`](docs/GUIDED_WALKTHROUGH.md).
+
 ## Reading Order
 
-For a complete technical understanding, read these sections in order:
+The quick path above is sufficient for presenting. For a complete technical
+understanding, read these sections in order:
 
 1. **Failure Scenario** defines the input, model output, route, and exception.
 2. **How The Demo Application Works** follows one request through every
@@ -676,15 +798,30 @@ code --install-extension ms-vscode-remote.remote-containers
 The recommended demo does not begin with an unexplained breakpoint. It begins
 with the application evidence an engineer would actually receive: a traceback.
 
-After preparing the bundled historical incident, run:
+On a clean checkout, run:
 
 ```bash
+make investigate
+```
+
+This command first runs `make replay-example` to prepare and verify the bundled
+recording. It then runs `make show-failure` to replay the selected worker with
+Docker networking disabled and print the original decision event, failure
+event, and Python traceback.
+
+The two commands can also be run explicitly:
+
+```bash
+make replay-example
 make show-failure
 ```
 
-Retrace replays the selected worker with Docker networking disabled and prints
-the original decision event, failure event, and Python traceback. The important
-tail is:
+Do not run `make show-failure` first on a clean checkout; it expects
+`make replay-example` to have created the active extracted recording under
+`generated/recordings/`. After preparation, `make show-failure` can be repeated
+whenever the traceback needs to be shown again.
+
+The important traceback tail is:
 
 ```text
 File "/app/worker/__main__.py", line 15, in main

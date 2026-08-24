@@ -11,8 +11,14 @@ export DEMO_SOURCE_GIT_SHA
 
 run: preflight model demo
 
-investigate: replay-example
+investigate:
+	@printf '\n%s\n' '=== 1. Prepare and verify the reviewed Retrace recording ==='
+	$(MAKE) replay-example
+	@printf '\n%s\n' '=== 2. Replay that recording and print the historical traceback ==='
 	$(MAKE) show-failure
+	@printf '\n%s\n' '=== 3. Open the same recording in VS Code ==='
+	@printf '%s\n' 'Run: code .'
+	@printf '%s\n' 'Then select: Dev Containers: Reopen in Container'
 
 replay-example: preflight build
 	python3 -m scripts.run_replay_example
@@ -20,7 +26,7 @@ replay-example: preflight build
 show-failure: preflight
 	python3 -m scripts.show_failure
 
-presentation: replay-example
+presentation: investigate
 
 preflight:
 	python3 -m scripts.preflight

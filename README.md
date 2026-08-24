@@ -27,21 +27,34 @@ code --install-extension ms-vscode-remote.remote-containers
 The Retrace VS Code extension is installed automatically inside the Dev
 Container.
 
-### 1. Prepare the recording and show the failure
+### 1. Prepare the recording, replay it, and show the failure
 
-From the repository root:
+Run every command in this section from the repository root in the same host
+terminal. Do not open VS Code yet:
 
 ```bash
-docker info
-make investigate
+open -a Docker     # start Docker Desktop on macOS
+docker info        # confirm that the Docker daemon is ready
+make investigate  # prepare, verify, replay, and print the traceback
 ```
 
-`make investigate` runs these two targets in order:
+`make investigate` is the complete terminal phase. It runs these operations in
+order in that same terminal:
 
 ```text
-make replay-example   # verify, copy, extract, replay, and prepare VS Code
-make show-failure     # replay once more and print the complete traceback
+make replay-example
+  # select the reviewed recording, verify it, replay it three times offline,
+  # validate DAP, and generate the recording workspace
+
+make show-failure
+  # perform another real network-disabled replay and print the complete
+  # historical Python traceback
 ```
+
+The bundled artifact is a genuine recording captured during an earlier fresh
+Qwen invocation. This reliable workflow does not create a replacement model
+response on stage. It replays the execution that actually failed. The separate
+`make run` workflow performs fresh model calls and creates new recordings.
 
 The expected application failure appears in the terminal:
 
@@ -65,10 +78,13 @@ historical failed invocation
   -> real Python traceback identifies decision_agent.py:116
 ```
 
+Only after the traceback has appeared, open that same execution in VS Code.
+Run this in the same host terminal:
+
 ### 2. Open that same execution in VS Code
 
 ```bash
-code .
+code .  # open this repository; no second terminal is needed
 ```
 
 In VS Code:
@@ -799,10 +815,10 @@ code --install-extension ms-vscode-remote.remote-containers
 The recommended demo does not begin with an unexplained breakpoint. It begins
 with the application evidence an engineer would actually receive: a traceback.
 
-On a clean checkout, run:
+On a clean checkout, use one host terminal and run:
 
 ```bash
-make investigate
+make investigate  # prepare, verify, replay, and print the traceback
 ```
 
 This command first runs `make replay-example` to prepare and verify the bundled
@@ -810,7 +826,9 @@ recording. It then runs `make show-failure` to replay the selected worker with
 Docker networking disabled and print the original decision event, failure
 event, and Python traceback.
 
-The two commands can also be run explicitly:
+The two lower-level commands can also be run explicitly for engineering work,
+but the presentation uses `make investigate` so the traceback appears during
+the first terminal flow:
 
 ```bash
 make replay-example
@@ -890,12 +908,13 @@ This gives the audience the program, variable, route, and failure model before
 any tooling appears. The remaining steps show how the historical execution is
 reproduced and investigated.
 
-### 1. Confirm Docker is available
+### 1. Start Docker and confirm it is available
 
-From the repository root:
+From the repository root in one host terminal:
 
 ```bash
-docker info
+open -a Docker  # start Docker Desktop on macOS
+docker info     # verify that Docker is ready before building or replaying
 ```
 
 This confirms the execution environment needed for the pinned Linux Python
@@ -905,7 +924,7 @@ command fails.
 ### 2. Prepare and replay the historical incident
 
 ```bash
-make investigate
+make investigate  # prepare the recording, prove replay/DAP, and print traceback
 ```
 
 This target is a readable wrapper around two operations:
@@ -989,8 +1008,10 @@ Explain the starting point:
 
 ### 4. Open the same recording in VS Code
 
+After the traceback has been shown, stay in the same host terminal and run:
+
 ```bash
-code .
+code .  # open the repository that contains the selected recording
 ```
 
 Open the Command Palette and select **Dev Containers: Reopen in Container**.
@@ -1838,7 +1859,7 @@ and the test harness that verifies the result.
 | `make run` | Runs `preflight`, pulls the pinned Qwen model, executes fresh real-model invocations, creates new recordings, selects a natural failure, performs ten network-disabled replays, validates DAP, and writes the complete proof set. |
 | `make replay-example` | Builds the native image, selects and verifies the architecture-matched bundled recording, performs three network-disabled replays, validates DAP, and generates the VS Code workspace. It makes no model call and creates no recording. |
 | `make show-failure` | Replays the active selected root process through the installed `replay` CLI with networking disabled, prints and validates the complete historical traceback, and saves `presentation-traceback.log`. Run `replay-example` first. |
-| `make presentation` | Compatibility alias for `make replay-example`. New instructions use the clearer `make replay-example` name. |
+| `make presentation` | Compatibility alias for the complete `make investigate` flow. New instructions use the clearer `make investigate` name. |
 
 ### Setup and service control
 

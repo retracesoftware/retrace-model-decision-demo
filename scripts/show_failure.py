@@ -110,7 +110,9 @@ def main() -> None:
         "network=none"
     )
     print(f"traceback_log={TRACEBACK_LOG}")
-    print("next=Open worker/decision_agent.py at line 116 in the Dev Container")
+    print("next=Run `code .` in this host terminal")
+    print("then=Select `Dev Containers: Reopen in Container`")
+    print("debug=Open /app/worker/decision_agent.py at line 116")
 
 
 if __name__ == "__main__":

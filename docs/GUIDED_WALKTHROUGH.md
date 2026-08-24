@@ -160,12 +160,16 @@ metadata, downstream locals, route, and exception are all inspectable.
 
 ## Prepare The Historical Incident
 
-From the repository root, run:
+From the repository root, use one host terminal and run:
 
 ```bash
-docker info
-make investigate
+open -a Docker     # start Docker Desktop on macOS
+docker info        # confirm that Docker is ready
+make investigate  # prepare, verify, replay, and print the traceback
 ```
+
+Keep this terminal visible. `make investigate` prints the historical traceback
+here before VS Code is opened. No second terminal is part of the walkthrough.
 
 `make investigate` does two things.
 

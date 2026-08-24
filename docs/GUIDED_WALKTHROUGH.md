@@ -45,13 +45,30 @@ CASE = {
 }
 ```
 
+Be precise when presenting what this request represents:
+
+- No photo is uploaded or analyzed. The phrase saying that a photo supports
+  the damage is text inside `user_prompt`.
+- The day-31 timing, four-year account history, and regulated-equipment context
+  are also text supplied to Qwen; the application does not query separate
+  systems for them.
+- `serial_number=None` is different: it is a structured request field as well
+  as a fact described in the prompt. The downstream Python route reads this
+  structured value.
+
+The demo therefore proves recording and replay of a real sampled language-model
+HTTP response and the Python control flow driven by that response. It does not
+claim to demonstrate image analysis, policy retrieval, or account-data
+retrieval.
+
 The same customer request and the same model prompt are used on every fresh
 invocation. The model gateway uses real Qwen sampling with temperature `1.7`,
 top-p `1.0`, and no seed. That means the request hash stays identical while
 the returned score can vary.
 
-The model does not decide whether Python crashes. It returns a score and a
-reason. `worker/decision_agent.py` owns the deterministic application logic:
+The model reads the prompt text and returns only a score and a reason. It does
+not decide whether Python crashes. `worker/decision_agent.py` owns the
+deterministic application logic:
 
 ```text
 score below 65 -> approve_refund

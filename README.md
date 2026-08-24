@@ -22,14 +22,53 @@ For a complete technical understanding, read these sections in order:
 
 ## Failure Scenario
 
-Sofia asks for a GBP 125 refund for a damaged medical-device accessory. The
-case is deliberately borderline:
+The demo supplies Qwen with a text description of Sofia asking for a GBP 125
+refund for a damaged medical-device accessory. The text describes a
+deliberately borderline case:
 
 - it is one day outside the self-service window,
 - a photo supports the damage,
 - the serial number is obscured and represented in the request as `None`,
 - the customer has a good four-year history, and
 - the accessory accompanies regulated equipment but is not safety-critical.
+
+These statements are **textual prompt content**, not independently loaded case
+records. The demo does not upload a photo, send image bytes or a photo URL, run
+a vision model, query an account-history database, or evaluate a policy engine.
+The word `photo` is part of the sentence Qwen receives. It means "the prompt
+asserts that photo evidence exists," not "the application verified a photo."
+
+The complete application request has only three structured fields:
+
+```python
+{
+    "case_id": "CASE-MODEL-NONDETERMINISM-001",
+    "serial_number": None,
+    "user_prompt": "Sofia requests a GBP 125 refund ...",
+}
+```
+
+The scenario details are represented and consumed as follows:
+
+| Scenario detail | Actual representation | Code that consumes it |
+| --- | --- | --- |
+| Day 31 of a 30-day window | Words inside `user_prompt` | Qwen only |
+| Photo supports the damage | Words inside `user_prompt`; no photo is transmitted | Qwen only |
+| Serial number is obscured | Words inside `user_prompt` and structured `serial_number=None` | Qwen sees the words; Python later reads the structured value |
+| Four-year account history | Words inside `user_prompt` | Qwen only |
+| Regulated but non-safety-critical accessory | Words inside `user_prompt` | Qwen only |
+
+Qwen does not receive or emit a full business decision. It receives the system
+instruction plus `user_prompt` and returns exactly two fields:
+
+```json
+{"review_score": 65, "reason": "..."}
+```
+
+Ordinary Python then validates those fields, maps the score to a route, and
+executes that route. Python does not independently recompute the score from the
+five scenario statements. The only case fact directly consumed after model
+inference is `serial_number`, and only the middle route reads it.
 
 A real sampled `qwen3:1.7b` model assigns a discretionary review score. The
 application converts that score into one of three ordinary Python routes:
@@ -40,8 +79,9 @@ score 65-69     -> request_more_information    -> needs a serial number
 score 70+       -> escalate_specialist         -> succeeds
 ```
 
-The missing serial number exists on every invocation, but only the middle
-route reads it. In the preserved incident, Qwen returned score `65`. Python
+The missing serial number is present as `None` on every invocation, but only
+the middle route reads it. In the preserved incident, Qwen returned score
+`65`. Python
 selected `request_more_information`, loaded `serial_number=None`, and called
 `.strip()` on it:
 
@@ -72,7 +112,7 @@ The relevant source files are:
 
 | File | Responsibility |
 | --- | --- |
-| `scripts/demo_state.py` | Defines the identical customer case, including `serial_number=None`. |
+| `scripts/demo_state.py` | Defines the three-field request. The business details are prose in `user_prompt`; no image or case database is involved. |
 | `external_world/model_gateway.py` | Makes the real sampled Qwen call during fresh capture. |
 | `worker/http_json.py` | Contains the external HTTP boundary that Retrace records. |
 | `worker/model_client.py` | Sends the model messages and output schema to the gateway. |
@@ -82,8 +122,11 @@ The relevant source files are:
 
 The model is not instructed to fail, and the failing response is not
 hardcoded. Fresh mode uses temperature `1.7`, top-p `1.0`, and no seed. Every
-invocation sends the same model-request hash, but sampled responses may produce
-different scores and therefore different Python routes.
+invocation sends the same text and model-request hash, but sampled responses
+may produce different scores and therefore different Python routes. The real
+system behavior demonstrated here is model-dependent control flow plus
+deterministic capture and replay of the model's HTTP result. It is not a
+computer-vision, document-extraction, or customer-record retrieval demo.
 
 ## System Architecture
 

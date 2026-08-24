@@ -127,10 +127,6 @@ The presentation story is therefore:
 For the spoken explanation and additional debugger operations, use
 [`docs/GUIDED_WALKTHROUGH.md`](docs/GUIDED_WALKTHROUGH.md).
 
-For the complete team-facing explanation of what changed, what to say, what to
-show, and how to recover during a live call, use
-[`docs/TEAM_DEMO_RUNBOOK.md`](docs/TEAM_DEMO_RUNBOOK.md).
-
 ## Reading Order
 
 The quick path above is sufficient for presenting. For a complete technical

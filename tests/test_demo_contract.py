@@ -19,6 +19,8 @@ from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
 from scripts.proof_manifest import verify_recording_proof
+from scripts.prepare_vscode import customize_workspace
+from scripts.prepare_vscode_pair import vscode_open_commands
 from scripts import platforms
 from scripts.platforms import normalize_architecture, reviewed_artifact_directory
 from scripts.run_demo import (
@@ -170,13 +172,79 @@ def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> N
     )
     vscode = devcontainer["customizations"]["vscode"]
     assert RETRACE_EXTENSION_ID in vscode["extensions"]
+    assert vscode["settings"]["python.analysis.languageServerMode"] == "light"
+    assert vscode["settings"]["python.analysis.indexing"] is False
     assert vscode["settings"]["remote.extensionKind"][RETRACE_EXTENSION_ID] == [
         "workspace"
     ]
+    assert devcontainer["postCreateCommand"] == (
+        "python -m scripts.prepare_vscode_pair"
+    )
 
     workspace_settings = json.loads((ROOT / ".vscode" / "settings.json").read_text())
     assert workspace_settings["retrace.recording"] == SELECTED_RECORDING
     assert workspace_settings["terminal.integrated.cwd"] == "/app"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "label", "title_color"),
+    (
+        ("success", "PASSING EXECUTION", "#166534"),
+        ("failure", "FAILING EXECUTION", "#991B1B"),
+    ),
+)
+def test_generated_workspaces_are_visibly_outcome_specific(
+    tmp_path: Path,
+    outcome: str,
+    label: str,
+    title_color: str,
+) -> None:
+    workspace_path = tmp_path / f"selected-{outcome}.code-workspace"
+    workspace_path.write_text(
+        json.dumps(
+            {
+                "folders": [{"path": "/app"}],
+                "settings": {
+                    "retrace.recording": (
+                        f"/app/generated/recordings/selected-{outcome}.retrace"
+                    )
+                },
+                "launch": {
+                    "configurations": [
+                        {"type": "retrace", "name": "Retrace"},
+                    ]
+                },
+            }
+        )
+    )
+
+    customize_workspace(workspace_path, outcome)
+
+    workspace = json.loads(workspace_path.read_text())
+    assert workspace["folders"][0]["name"] == label
+    assert workspace["settings"]["retrace.recording"] == (
+        f"/app/generated/recordings/selected-{outcome}.retrace"
+    )
+    assert workspace["settings"]["window.title"].startswith(label)
+    assert workspace["settings"]["python.analysis.languageServerMode"] == "light"
+    assert workspace["settings"]["python.analysis.indexing"] is False
+    assert (
+        workspace["settings"]["workbench.colorCustomizations"][
+            "titleBar.activeBackground"
+        ]
+        == title_color
+    )
+    assert workspace["launch"]["configurations"][0]["name"] == (f"Retrace: {label}")
+
+
+def test_vscode_pair_opens_success_then_reuses_current_window_for_failure() -> None:
+    success = Path("/app/success.code-workspace")
+    failure = Path("/app/failure.code-workspace")
+
+    assert vscode_open_commands("/remote/code", success, failure) == [
+        ["/remote/code", "--new-window", str(success)],
+        ["/remote/code", "--reuse-window", str(failure)],
+    ]
 
 
 def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
@@ -188,6 +256,8 @@ def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
 
     devcontainer_compose = (ROOT / ".devcontainer" / "compose.yaml").read_text()
     assert "platform: linux/amd64" not in devcontainer_compose
+    assert "mem_limit: 2g" in devcontainer_compose
+    assert "cpus: 2" in devcontainer_compose
 
 
 def test_supported_docker_architectures_use_native_reviewed_artifacts() -> None:

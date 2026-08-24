@@ -12,6 +12,20 @@ from scripts.platforms import docker_architecture, reviewed_artifact_directory
 from scripts.verify_dap import marker_line, route_line, verify, verify_success
 
 
+WORKSPACE_PRESENTATION = {
+    "failure": {
+        "label": "FAILING EXECUTION",
+        "active_title": "#991B1B",
+        "inactive_title": "#7F1D1D",
+    },
+    "success": {
+        "label": "PASSING EXECUTION",
+        "active_title": "#166534",
+        "inactive_title": "#14532D",
+    },
+}
+
+
 def artifact_paths(outcome: str) -> tuple[Path, Path, Path]:
     if outcome not in {"failure", "success"}:
         raise ValueError(f"unsupported VS Code recording outcome: {outcome}")
@@ -21,6 +35,33 @@ def artifact_paths(outcome: str) -> tuple[Path, Path, Path]:
         directory / f"selected-{outcome}.expected.json",
         directory / f"selected-{outcome}.proof.json",
     )
+
+
+def customize_workspace(workspace_path: Path, outcome: str) -> None:
+    presentation = WORKSPACE_PRESENTATION[outcome]
+    label = presentation["label"]
+    workspace = json.loads(workspace_path.read_text())
+
+    folders = workspace.get("folders", [])
+    if folders:
+        folders[0]["name"] = label
+
+    settings = workspace.setdefault("settings", {})
+    settings["window.title"] = f"{label} | ${{activeEditorShort}}"
+    settings["python.analysis.languageServerMode"] = "light"
+    settings["python.analysis.indexing"] = False
+    settings["workbench.colorCustomizations"] = {
+        "titleBar.activeBackground": presentation["active_title"],
+        "titleBar.activeForeground": "#FFFFFF",
+        "titleBar.inactiveBackground": presentation["inactive_title"],
+        "titleBar.inactiveForeground": "#FFFFFFCC",
+    }
+
+    for configuration in workspace.get("launch", {}).get("configurations", []):
+        if configuration.get("type") == "retrace":
+            configuration["name"] = f"Retrace: {label}"
+
+    workspace_path.write_text(json.dumps(workspace, indent=2) + "\n")
 
 
 def prepare(outcome: str = "failure") -> Path | None:
@@ -74,6 +115,8 @@ def prepare(outcome: str = "failure") -> Path | None:
         cwd=ROOT,
         check=True,
     )
+    workspace_path = active.with_suffix(".code-workspace")
+    customize_workspace(workspace_path, outcome)
     expected = json.loads(expected_path.read_text())
     transcript = GENERATED / "transcripts" / f"vscode-{outcome}-preflight-dap.json"
     if outcome == "failure":
@@ -83,7 +126,7 @@ def prepare(outcome: str = "failure") -> Path | None:
         verify_success(active, expected, transcript)
         breakpoint_line = route_line()
     print(f"active_recording={active}")
-    print(f"workspace={active.with_suffix('.code-workspace')}")
+    print(f"workspace={workspace_path}")
     print(f"breakpoint={ROOT / 'worker/decision_agent.py'}:{breakpoint_line}")
     return active
 

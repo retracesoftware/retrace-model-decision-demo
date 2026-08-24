@@ -7,7 +7,7 @@
   "service": "workspace",
   "workspaceFolder": "/app",
   "shutdownAction": "stopCompose",
-  "postCreateCommand": "python -m scripts.prepare_vscode",
+  "postCreateCommand": "python -m scripts.prepare_vscode_pair",
   "hostRequirements": {
     "cpus": 2,
     "memory": "3gb",
@@ -21,6 +21,8 @@
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.languageServerMode": "light",
+        "python.analysis.indexing": false,
         "remote.extensionKind": {
           "RetraceSoftware.retrace-debug-extension": [
             "workspace"

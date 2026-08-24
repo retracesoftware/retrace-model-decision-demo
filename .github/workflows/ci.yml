@@ -54,6 +54,12 @@ jobs:
             docker compose --file compose.yaml run --rm --no-deps agent \
             python -m scripts.prepare_vscode --recording success
 
+      - name: Verify simultaneous passing and failing DAP sessions
+        run: |
+          DEMO_UID=$(id -u) DEMO_GID=$(id -g) \
+            docker compose --file compose.yaml run --rm --no-deps agent \
+            python -m scripts.verify_dap_pair
+
       - name: Repeat the bundled replay and DAP proof five times
         run: |
           for run in 1 2 3 4 5; do

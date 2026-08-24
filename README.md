@@ -788,8 +788,8 @@ The container image is pinned to:
 ```text
 Debian Bookworm, native Linux/AMD64 or Linux/ARM64
 Python 3.12.13
-retracesoftware==0.2.28
-retracesoftware-dap==0.2.28
+retracesoftware==0.2.29
+retracesoftware-dap==0.2.29
 azure-ai-agentserver-invocations==1.0.0
 qwen3:1.7b, pinned digest for live mode
 ```

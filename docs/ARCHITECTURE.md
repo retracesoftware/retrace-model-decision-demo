@@ -167,7 +167,7 @@ at the model HTTP boundary.
 
 ## Native Architecture Contract
 
-Retrace `0.2.28` and retracesoftware-dap `0.2.28` publish Linux wheels for
+Retrace `0.2.29` and retracesoftware-dap `0.2.29` publish Linux wheels for
 both AMD64 and ARM64. The Docker image therefore builds for the engine's
 native architecture; the demo never forces an AMD64 image on Apple Silicon.
 

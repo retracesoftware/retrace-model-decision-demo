@@ -5,6 +5,9 @@
     "compose.yaml"
   ],
   "service": "workspace",
+  "runServices": [
+    "workspace"
+  ],
   "workspaceFolder": "/app",
   "shutdownAction": "stopCompose",
   "postCreateCommand": "python -m scripts.prepare_vscode_pair",

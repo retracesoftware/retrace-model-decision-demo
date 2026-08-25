@@ -94,22 +94,48 @@ same stage of each history.
 The persistent workspace container is limited to two CPUs and 2 GB of memory.
 Both workspaces use Pylance's light mode with indexing disabled, leaving the
 runtime evidence and debugger features available without allowing the paired
-editor setup to consume unbounded Docker resources.
+editor setup to consume unbounded Docker resources. The Dev Container and both
+generated workspaces explicitly enable the editor glyph margin and allow
+breakpoints in recorded source files. Set or remove a breakpoint by clicking
+the gutter beside a line number, or place the cursor on the line and press
+`F9` (`fn+F9` on keyboards where function keys control hardware features).
 
 In both windows, set the same breakpoint at `worker/__main__.py:13`, then
 click Play beside the Python process in each Retrace sidebar. Step Over once
 in each window. Both historical `request` locals contain
 `serial_number=None`, proving the application input is the same.
 
-Next, restart both sessions with only `worker/decision_agent.py:83` enabled.
-Step Into `route_review_score` in each window:
+While each replay remains active, remove the line `13` breakpoint and add
+`worker/decision_agent.py:83`. Wait for `breakpoint scan ... complete`, then
+press Continue in each window. Line `83` is later than the current cursor, so
+the replay does not need to be restarted. Step Into `route_review_score` in
+each window:
 
-- The PASSING window contains the independently sampled score that selected
-  `approve_refund` or `escalate_specialist`. It exits without reading the
-  optional serial number.
+- The PASSING window contains the independently sampled safe score. The
+  reviewed ARM64 recording has score `70` and returns
+  `escalate_specialist`; the reviewed AMD64 recording has score `60` and
+  returns `approve_refund`. Both exit without reading the optional serial
+  number.
 - The FAILING window contains score `65`. It selects
   `request_more_information`, reads `serial_number` at line `115`, and raises
   `AttributeError` at line `116`.
+
+The routing function returns a string directly; there is no local variable
+named `result` inside `route_review_score`. After its return, the caller stores
+that string in `decision_name` on line `83`. Step Over the return; if the
+cursor first returns to line `83`, Step Over once more to line `84`. Then
+inspect `decision_name` in `run_decision_agent`.
+
+Breakpoint changes do not require closing VS Code, reopening the Dev
+Container, or restarting the Retrace extension. During an active replay:
+
+- add or remove source breakpoints and wait for their scans to finish,
+- use Continue when the new target lies later in the historical execution,
+- use **Restart Debugging** when the new target lies earlier than the current
+  cursor.
+
+Restart Debugging restarts only that window's replay/DAP session. The other
+window and the Retrace extension remain open.
 
 Do not run `make replay-pair`, `make clean`, or regenerate the selected
 recordings while either debugger is active. Those commands replace files in
@@ -230,23 +256,29 @@ Terminal replay and VS Code are using the same
 
 ### 3. Follow the cause backward
 
-Restart replay with only line `83` enabled. Step Into
+Remove the line `116` breakpoint, add line `83`, wait for its scan to finish,
+and select **Restart Debugging**. Line `83` occurred before the current failure
+cursor, so this restarts only the replay session; it does not restart the
+Retrace extension or the Dev Container. Step Into
 `route_review_score(review_score)` and show:
 
 ```text
 65 < 65 -> false
 65 < 70 -> true
-route -> request_more_information
+returned string -> request_more_information
+caller local decision_name -> request_more_information
 ```
 
-Restart with only line `82` enabled. Step Into
+Remove line `83`, add line `82`, and select **Restart Debugging** because line
+`82` is earlier than the current cursor. Step Into
 `parse_model_assessment(raw_model_response)` and show that `review_score=65`
 came from the preserved model response.
 
-Optionally restart with only `worker/http_json.py:21` enabled. Step Over
-`urlopen()`. The response returns while the gateway is stopped, proving that
-Retrace supplies the recorded historical HTTP result. The automated replay and
-DAP proofs perform the same check inside `--network none` containers.
+Optionally replace that breakpoint with `worker/http_json.py:21` and select
+**Restart Debugging**. Step Over `urlopen()`. The response returns while the
+gateway is stopped, proving that Retrace supplies the recorded historical HTTP
+result. The automated replay and DAP proofs perform the same check inside
+`--network none` containers.
 
 The presentation story is therefore:
 
@@ -891,6 +923,14 @@ The generated `.code-workspace` identifies the extracted process tree for the
 extension. The extension and DAP adapter do not debug a new model invocation;
 they control replay of the selected recording.
 
+For paired comparison, `make vscode-pair` creates two independent workspace
+configurations. Each pins one recording and launches its own extension host,
+DAP adapter, replay process, and control socket while sharing the source tree
+at `/app`. Breakpoint edits are sent to the active adapter through
+DAP `setBreakpoints`; they do not require restarting the extension. Continue
+advances to a later historical hit. Restart Debugging creates a fresh replay
+cursor when the requested breakpoint occurred earlier than the current cursor.
+
 ## Requirements
 
 For the bundled replay and VS Code investigation:
@@ -977,9 +1017,9 @@ deeper questions:
 | --- | --- | --- |
 | Where did the incident fail? | `decision_agent.py:116` | This is the exact operation named by the traceback. |
 | What value caused it? | `serial_number=None` in Locals | This proves the concrete historical runtime state, not a source-level guess. |
-| Why did Python execute this branch? | Step Back to the route, or restart at line `83` | `review_score=65` selected `request_more_information`. |
+| Why did Python execute this branch? | Step Back to the route, or move the breakpoint to line `83` and restart only the debug session | `review_score=65` selected `request_more_information`. |
 | Where did score 65 come from? | Step Into line `82` | `parse_model_assessment` reads it from the historical model response. |
-| Is replay asking the model again? | Restart at `http_json.py:21` with no gateway | Step Over returns the recorded HTTP response immediately; the automated proof also verifies this under `--network none`. |
+| Is replay asking the model again? | Move the breakpoint to `http_json.py:21` and restart only the debug session | Step Over returns the recorded HTTP response immediately; the automated proof also verifies this under `--network none`. |
 
 The causal chain recovered from the historical execution is:
 
@@ -1187,49 +1227,61 @@ the model-derived route information in the same frame.
 
 ### 6. Prove why the failing route executed
 
-Stop the current debug session. Remove or disable line `116`, then leave only a
+While the debugger remains open, remove or disable line `116` and add a
 breakpoint on line `83`:
 
 ```python
 decision_name = route_review_score(review_score)
 ```
 
-Start replay again from the Retrace sidebar. When it stops, select **Step
-Into** to enter `route_review_score`. Step Over its two comparisons:
+Wait for `breakpoint scan ... complete`, then select **Restart Debugging** in
+the debug toolbar. This target occurred before the failure cursor, so Continue
+cannot reach it by moving forward. Restart Debugging starts that replay again;
+it does not close VS Code, reconnect the Dev Container, or restart the Retrace
+extension.
+
+When replay stops at line `83`, select **Step Into** to enter
+`route_review_score`. Step Over its two comparisons:
 
 ```text
 review_score = 65
 65 < 65 -> false
 65 < 70 -> true
-route -> request_more_information
+returned string -> request_more_information
 ```
+
+The function returns the string directly; it has no local named `result`.
+After returning to `run_decision_agent`, Step Over to line `84` if necessary
+and inspect `decision_name="request_more_information"` in the caller's Locals.
 
 This proves that the failing branch was selected by the historical model score
 rather than by a hardcoded failure switch.
 
 ### 7. Prove where score 65 came from
 
-Stop the session, remove or disable line `83`, and leave only line `82`:
+Remove or disable line `83` and add line `82`:
 
 ```python
 review_score, decision_reason = parse_model_assessment(raw_model_response)
 ```
 
-Start replay and Step Into `parse_model_assessment`. Step Over the validation
-and JSON parsing code. Inspect `content`, `assessment`, `review_score`, and
+Select **Restart Debugging** because line `82` is earlier than the current
+cursor. Step Into `parse_model_assessment`, then Step Over the validation and
+JSON parsing code. Inspect `content`, `assessment`, `review_score`, and
 `decision_reason`. This shows that score `65` was parsed from the preserved raw
 model response before Python selected a route.
 
 ### 8. Prove that replay does not call the model
 
-Stop the session and remove or disable the previous breakpoint. Open
-`/app/worker/http_json.py` and set the only breakpoint on line `21`:
+Remove or disable the previous breakpoint. Open `/app/worker/http_json.py` and
+add a breakpoint on line `21`:
 
 ```python
 with urlopen(request, timeout=timeout) as response:
 ```
 
-Start replay and Step Over. Execution moves to line `22`, and `response` is
+Select **Restart Debugging** because the HTTP boundary occurred before the
+current cursor. Step Over. Execution moves to line `22`, and `response` is
 available even though the model gateway is not running. Retrace supplied the
 historical HTTP result recorded at this boundary. The automated replay and DAP
 proofs verify the same behavior in `--network none` containers. Step Over again
@@ -1242,7 +1294,9 @@ observed it.
 
 ### 9. Demonstrate reverse execution
 
-Restart with only line `116` enabled. After the automatic stop:
+Remove the HTTP breakpoint, add line `116`, and press Continue. The failure is
+later than the HTTP cursor, so the active replay can advance to it without a
+restart. After the stop:
 
 1. Step Back to the line `115` serial-number assignment.
 2. Continue backward toward the branch and decision-evidence construction.
@@ -1637,6 +1691,12 @@ The Dev Container automatically:
 - generates its `.code-workspace`, and
 - runs the automated DAP preflight.
 
+The Dev Container and generated workspaces also set
+`editor.glyphMargin=true` and `debug.allowBreakpointsEverywhere=true`. Click
+the gutter beside a source line to toggle a breakpoint, or place the cursor on
+the line and press `F9` (`fn+F9` where required). Existing windows created
+before these settings were added should run **Developer: Reload Window** once.
+
 ### Start At The Traceback Location
 
 If you used `make investigate`, the terminal has just shown:
@@ -1727,7 +1787,10 @@ toward the branch at lines `112-115`. As you continue backward, historical
 locals disappear before the statements that created them. Step Over forward
 and they reappear.
 
-For the clearest route explanation, restart replay with only a breakpoint on:
+For the clearest route explanation, remove line `116`, add a breakpoint on
+line `83`, wait for the scan to complete, and select **Restart Debugging**.
+Line `83` precedes the current failure cursor, so Continue would only search
+forward:
 
 ```python
 decision_name = route_review_score(review_score)  # line 83
@@ -1738,27 +1801,39 @@ Step Into `route_review_score`. The historical value is `65`, so:
 ```text
 65 < 65 -> false
 65 < 70 -> true
-result  -> request_more_information
+returned string -> request_more_information
+caller local decision_name -> request_more_information
 ```
 
 That answers **why Python entered the failing branch**.
 
-Next, restart with only line `82` enabled and Step Into
-`parse_model_assessment`. This shows that the score and reason came from the
-preserved `raw_model_response`, answering **where the routing input came
+The routing function returns a string directly; it has no local variable named
+`result`. Step Over its return; if the cursor first returns to line `83`, Step
+Over once more to line `84`, then inspect `decision_name` in the caller.
+
+Next, move the breakpoint to line `82`, select **Restart Debugging**, and Step
+Into `parse_model_assessment`. This shows that the score and reason came from
+the preserved `raw_model_response`, answering **where the routing input came
 from**.
 
-Finally, restart with only `worker/http_json.py:21` enabled. Step Over the
+Finally, move the breakpoint to `worker/http_json.py:21` and select **Restart
+Debugging** because that boundary is earlier in the history. Step Over the
 `urlopen` statement. The response returns immediately even though the model
 gateway is not running. This is the visible proof that replay is supplying the
 historical external result rather than making a new inference.
 
-To demonstrate the exception-unwind fix, restart the replay at the failure
-breakpoint and select Step Into. Because `serial_number` is `None`, no Python
-child frame can be entered: attribute lookup raises immediately. Retrace skips
-CPython's artificial source-less unwind bytecode and stops at the inspectable
-exception handler in `/app/worker/__main__.py`. Call Stack, Scopes, and Locals
-must remain available after that stop.
+To demonstrate the exception-unwind fix, move the breakpoint back to line
+`116` and press Continue from the earlier HTTP cursor. Select Step Into at the
+failure. Because `serial_number` is `None`, no Python child frame can be
+entered: attribute lookup raises immediately. Retrace skips CPython's
+artificial source-less unwind bytecode and stops at the inspectable exception
+handler in `/app/worker/__main__.py`. Call Stack, Scopes, and Locals must
+remain available after that stop.
+
+In general, changing breakpoints does not require stopping the extension or
+reopening the workspace. Wait for the new breakpoint scan, use Continue for a
+future location, and use Restart Debugging for a location earlier than the
+current historical cursor.
 
 The debugger is re-executing the selected historical recording. It does not
 make a new model inference.
@@ -1984,7 +2059,7 @@ the evidence produced by the agent and worker.
 | `Dockerfile` | Pins Debian Bookworm, Python 3.12.13, Retrace, retrace-dap, and all Python dependencies. Build-time checks fail if the pinned versions are not installed. |
 | `compose.yaml` | Defines the three live services, bind mount, ports, health checks, resource limits, environment, and isolated demo network. |
 | `.devcontainer/compose.yaml` | Adds a persistent `workspace` container using the same image and `/app` bind mount. It does not start a new model inference. |
-| `.devcontainer/devcontainer.json` | Tells VS Code to connect to `workspace`, install the Retrace extension in the remote extension host, select container Python, and prepare both recording workspaces after creation. |
+| `.devcontainer/devcontainer.json` | Tells VS Code to connect to `workspace`, install the Retrace extension in the remote extension host, select container Python, enable the breakpoint gutter, permit breakpoints in recorded source, and prepare both recording workspaces after creation. |
 | `Makefile` | Gives stable operator commands for the Python and Docker workflows described above. |
 
 ### Why the implementation has multiple scripts
@@ -2105,6 +2180,17 @@ Confirm:
 - the breakpoint is on `RETRACE_MODEL_FAILURE_BREAKPOINT`,
 - scanning has finished, and
 - replay has stopped directly on the historical breakpoint.
+
+If clicking the gutter does not create a red breakpoint dot, run **Developer:
+Reload Window**, reopen the source file under `/app/worker/`, and try the
+gutter again or press `F9` (`fn+F9` where required). Current generated
+workspaces explicitly enable `editor.glyphMargin` and
+`debug.allowBreakpointsEverywhere`.
+
+When changing a breakpoint during an active replay, wait for
+`breakpoint scan ... complete`. Use Continue when the target is later than the
+current cursor. Use Restart Debugging when it is earlier. Neither operation
+requires restarting the Retrace extension or reopening the Dev Container.
 
 Run the same DAP verifier used by CI:
 

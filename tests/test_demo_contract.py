@@ -241,6 +241,21 @@ def test_generated_workspaces_are_visibly_outcome_specific(
     assert workspace["launch"]["configurations"][0]["name"] == (f"Retrace: {label}")
 
 
+def test_debugger_documentation_matches_active_breakpoint_workflow() -> None:
+    readme = (ROOT / "README.md").read_text()
+    readme_one_line = readme.replace("\n", " ")
+    walkthrough = (ROOT / "docs" / "GUIDED_WALKTHROUGH.md").read_text()
+    architecture = (ROOT / "docs" / "ARCHITECTURE.md").read_text()
+
+    assert "use Continue when the new target lies later" in readme
+    assert "use **Restart Debugging** when the new target lies earlier" in readme
+    assert "there is no local variable named `result`" in readme_one_line
+    assert "## Manage Breakpoints During Replay" in walkthrough
+    assert "How To Restart A Debugging Scene" not in walkthrough
+    assert "DAP `setBreakpoints` update" in architecture
+    assert "result  ->" not in readme
+
+
 def test_vscode_pair_opens_success_then_reuses_current_window_for_failure() -> None:
     success = Path("/app/success.code-workspace")
     failure = Path("/app/failure.code-workspace")

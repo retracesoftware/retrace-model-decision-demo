@@ -251,23 +251,37 @@ The Dev Container keeps all replay paths consistent. The source, Python
 3.12.13 runtime, Retrace packages, replay binary, recording, and VS Code
 extension all live at the same `/app` paths used when the recording was made.
 
-## How To Restart A Debugging Scene
+## Manage Breakpoints During Replay
 
-Use this reset sequence before each independent breakpoint demonstration:
+Start the replay once from the Retrace sidebar for the first scene:
 
-1. Click the red Stop square if a debug session is active.
-2. Open **Run and Debug**.
-3. In **Breakpoints**, remove or disable old source breakpoints.
-4. Leave only the breakpoint requested by the next scene.
-5. Click the Retrace icon in the left activity bar.
-6. Find the Python process under `selected-failure.retrace`.
-7. Click Play beside the process.
-8. Wait for `breakpoint scan ... complete`.
-9. Retrace stops automatically on the first matching historical location.
+1. Open **Run and Debug**.
+2. Set the requested source breakpoint by clicking the gutter beside its line
+   number, or place the cursor on the line and press `F9` (`fn+F9` where
+   required).
+3. Click the Retrace icon in the left activity bar.
+4. Find the Python process under `selected-failure.retrace`.
+5. Click Play beside the process.
+6. Wait for `breakpoint scan ... complete`.
+7. Retrace stops automatically on the first matching historical location.
 
-Do not press Continue before the initial stop. Continue means “go to the next
-matching breakpoint,” so pressing it when there is only one hit can terminate
-the session.
+For later scenes, keep VS Code, the Dev Container, and the Retrace extension
+open. Remove or disable the old source breakpoint, add the new one, and wait
+for its scan to complete. Then choose the navigation operation from the
+historical position:
+
+- **Continue** when the new breakpoint occurs later than the current cursor.
+- **Restart Debugging** when the new breakpoint occurred earlier. This starts
+  a fresh replay cursor in the same window; it does not restart the extension
+  or reconnect the container.
+
+Do not press Continue immediately after the initial automatic stop when there
+is no later breakpoint. Continue means “find the next matching historical
+hit,” so it can terminate a one-hit session.
+
+The Dev Container and generated workspaces explicitly enable the breakpoint
+gutter and breakpoints in recorded source. If an older open window does not
+show red breakpoint dots, run **Developer: Reload Window** once.
 
 ## Scene Three: What Value Caused The Failure?
 
@@ -330,14 +344,15 @@ locals change consistently with that earlier state.
 
 ## Scene Five: Why Did This Branch Execute?
 
-Restart with only line `83` enabled:
+Remove the line `116` breakpoint and add line `83`:
 
 ```python
 decision_name = route_review_score(review_score)
 ```
 
-Start replay, then press **Step Into**. You should enter
-`route_review_score` around line `69`.
+Wait for the scan to complete, then select **Restart Debugging** because line
+`83` occurred before the current failure cursor. Press **Step Into**. You
+should enter `route_review_score` around line `69`.
 
 Step Over through the conditions:
 
@@ -354,6 +369,13 @@ How to prove this visibly:
 - Execution moves past the first return without entering it.
 - Execution reaches the second condition and then line `72`.
 - The Call Stack shows `route_review_score` above `run_decision_agent`.
+- Step Over the return. If the cursor first returns to line `83`, Step Over
+  once more to line `84`; the caller's Locals now show
+  `decision_name = "request_more_information"`.
+
+`route_review_score` returns a string directly. There is no local variable
+named `result` inside that function; `decision_name` is the caller variable
+that receives the returned string on line `83`.
 
 Say:
 
@@ -367,16 +389,56 @@ Why line 83 matters:
 - line 83 explains the control-flow decision that made line 116 reachable,
 - it connects AI output to ordinary, inspectable Python behavior.
 
+### Optional paired route comparison
+
+To compare the genuine passing and failing recordings, run this once from the
+initial Dev Container terminal:
+
+```bash
+make vscode-pair
+```
+
+Tile the green **PASSING EXECUTION** window beside the red **FAILING
+EXECUTION** window. Set line `83` in both, start each recording from its own
+Retrace sidebar, and Step Into `route_review_score`.
+
+The failing recording is the same on both supported architectures:
+
+```text
+review_score = 65
+65 < 65 -> false, so execution advances to line 71
+65 < 70 -> true, so line 72 returns "request_more_information"
+caller at line 84 -> decision_name = "request_more_information"
+```
+
+The reviewed ARM64 passing recording shows:
+
+```text
+review_score = 70
+70 < 65 -> false, so execution advances to line 71
+70 < 70 -> false, so line 73 returns "escalate_specialist"
+caller at line 84 -> decision_name = "escalate_specialist"
+```
+
+The reviewed AMD64 passing recording uses score `60`, enters the first branch,
+and returns `"approve_refund"`. In every case, the returned string becomes the
+caller's `decision_name`; there is no route-local variable named `result`.
+
+After the initial automatic stops, breakpoints can be changed without closing
+either window. Use Continue for a new location later in that recording and
+Restart Debugging for a location earlier than its current cursor.
+
 ## Scene Six: Where Did Score 65 Come From?
 
-Restart with only line `82` enabled:
+Remove line `83` and add line `82`:
 
 ```python
 review_score, decision_reason = parse_model_assessment(raw_model_response)
 ```
 
-Start replay and press **Step Into**. Expect
-`parse_model_assessment` around line `43`.
+Select **Restart Debugging** because line `82` is earlier than the current
+cursor, then press **Step Into**. Expect `parse_model_assessment` around line
+`43`.
 
 Use Step Over through the parser. Show:
 
@@ -404,7 +466,7 @@ Why line 82 matters:
 
 ## Scene Seven: Prove The Model Was Not Called Again
 
-Restart with only `worker/http_json.py` line `21` enabled:
+Remove the line `82` breakpoint and add `worker/http_json.py` line `21`:
 
 ```python
 with urlopen(request, timeout=timeout) as response:
@@ -420,7 +482,8 @@ session started it:
 docker compose --file compose.yaml stop model-gateway
 ```
 
-Start replay. At line `21`:
+Select **Restart Debugging** because the HTTP call occurred earlier in the
+history. At line `21`:
 
 1. Inspect `url`, `method`, and `payload` in Locals.
 2. Press **Step Over**.
@@ -446,7 +509,9 @@ Why line 21 matters:
 
 ## Optional Scene: Exception Unwind
 
-Restart at line `116`. Press **Step Into**.
+Remove the HTTP breakpoint and add line `116`. Because the failure lies later
+than the HTTP cursor, press Continue rather than Restart Debugging. At line
+`116`, press **Step Into**.
 
 Because `serial_number` is `None`, there is no user Python function to enter;
 attribute lookup raises immediately. Retrace should move to the inspectable
@@ -466,14 +531,15 @@ investigation.
 
 ## Optional Scene: Raised Exception
 
-1. Stop the current session.
-2. Remove all source breakpoints.
-3. In **Run and Debug → Breakpoints**, enable **Raised Exceptions**.
-4. Start the recording from the Retrace sidebar.
-5. Expect a stop at the historical `AttributeError` on line `116`.
+1. Remove all source breakpoints.
+2. In **Run and Debug → Breakpoints**, enable **Raised Exceptions**.
+3. Select **Restart Debugging** so replay begins before the historical
+   exception.
+4. Expect a stop at the historical `AttributeError` on line `116`.
 
 This shows that Retrace can locate the exception without requiring a source
-breakpoint to be configured in advance.
+breakpoint to be configured in advance. The Retrace extension and Dev
+Container remain open throughout.
 
 ## The Closing Message
 

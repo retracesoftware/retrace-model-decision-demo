@@ -38,6 +38,10 @@ parse_model_assessment
                      |
                      v
 route_review_score
+  returns "request_more_information"
+                     |
+                     v
+run_decision_agent
   decision_name = request_more_information
                      |
                      v
@@ -271,6 +275,48 @@ The verifier requires historical values for:
 It then issues Step Back, verifies movement within the decision function, and
 continues forward to the same failure breakpoint. VS Code uses the same DAP
 protocol and the same replay binary.
+
+`route_review_score` does not create a local named `result`. It returns one of
+three strings directly, and `run_decision_agent` assigns that returned value to
+its `decision_name` local on line `83`. The visual route proof therefore
+follows the branch to its return statement, advances through the caller's line
+`83` when necessary, and inspects `decision_name` at line `84`.
+
+### Paired VS Code debugger topology
+
+`make vscode-pair` prepares two independent remote workspaces over the same
+persistent `/app` bind mount:
+
+```text
+PASSING EXECUTION window                 FAILING EXECUTION window
+  selected-success.retrace                selected-failure.retrace
+  Retrace extension host A                Retrace extension host B
+  DAP adapter A                           DAP adapter B
+  replay process A                        replay process B
+  control socket A                        control socket B
+               \                         /
+                shared source tree /app
+```
+
+The workspaces differ in title color, selected recording, and launch
+configuration. They share source files but not debugger state. Both explicitly
+enable `editor.glyphMargin` and `debug.allowBreakpointsEverywhere`, so source
+breakpoints can be toggled in the gutter even when the remote Python extension
+has not yet contributed language-specific breakpoint metadata.
+
+Adding or removing a source breakpoint sends a DAP `setBreakpoints` update to
+that window's adapter and starts a new historical breakpoint scan. It does not
+require restarting the Retrace extension or reopening the Dev Container. Once
+the scan completes:
+
+- Continue searches for a matching hit later than the active historical
+  cursor.
+- Restart Debugging creates a fresh replay cursor when the requested hit
+  occurred earlier.
+
+The two windows can perform those operations independently. Restarting one
+debug session does not alter the other window's selected recording or replay
+cursor.
 
 ## Proof Versus Presentation
 

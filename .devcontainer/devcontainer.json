@@ -26,6 +26,8 @@
         "python.defaultInterpreterPath": "/usr/local/bin/python",
         "python.analysis.languageServerMode": "light",
         "python.analysis.indexing": false,
+        "debug.allowBreakpointsEverywhere": true,
+        "editor.glyphMargin": true,
         "remote.extensionKind": {
           "RetraceSoftware.retrace-debug-extension": [
             "workspace"

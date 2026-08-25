@@ -50,6 +50,8 @@ def customize_workspace(workspace_path: Path, outcome: str) -> None:
     settings["window.title"] = f"{label} | ${{activeEditorShort}}"
     settings["python.analysis.languageServerMode"] = "light"
     settings["python.analysis.indexing"] = False
+    settings["debug.allowBreakpointsEverywhere"] = True
+    settings["editor.glyphMargin"] = True
     settings["workbench.colorCustomizations"] = {
         "titleBar.activeBackground": presentation["active_title"],
         "titleBar.activeForeground": "#FFFFFF",

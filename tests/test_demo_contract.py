@@ -174,6 +174,8 @@ def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> N
     assert RETRACE_EXTENSION_ID in vscode["extensions"]
     assert vscode["settings"]["python.analysis.languageServerMode"] == "light"
     assert vscode["settings"]["python.analysis.indexing"] is False
+    assert vscode["settings"]["debug.allowBreakpointsEverywhere"] is True
+    assert vscode["settings"]["editor.glyphMargin"] is True
     assert vscode["settings"]["remote.extensionKind"][RETRACE_EXTENSION_ID] == [
         "workspace"
     ]
@@ -228,6 +230,8 @@ def test_generated_workspaces_are_visibly_outcome_specific(
     assert workspace["settings"]["window.title"].startswith(label)
     assert workspace["settings"]["python.analysis.languageServerMode"] == "light"
     assert workspace["settings"]["python.analysis.indexing"] is False
+    assert workspace["settings"]["debug.allowBreakpointsEverywhere"] is True
+    assert workspace["settings"]["editor.glyphMargin"] is True
     assert (
         workspace["settings"]["workbench.colorCustomizations"][
             "titleBar.activeBackground"

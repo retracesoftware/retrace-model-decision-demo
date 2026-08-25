@@ -5,7 +5,8 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl make \
+    && command -v make \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.lock.txt /tmp/requirements.lock.txt

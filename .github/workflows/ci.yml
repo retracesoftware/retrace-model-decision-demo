@@ -45,6 +45,44 @@ jobs:
       - name: Run source tests and static checks
         run: make test
 
+      - name: Verify the documented self-service Retrace CLI flow
+        run: |
+          export DEMO_UID="$(id -u)"
+          export DEMO_GID="$(id -g)"
+
+          docker compose --file compose.yaml run --rm --no-deps agent \
+            python -m scripts.prepare_examples
+
+          docker compose --file compose.yaml run --rm --no-deps agent \
+            replay --recording recordings/examples/failure.retrace --index \
+            > /tmp/retrace-failure-index.json
+          python3 -c 'import json; data=json.load(open("/tmp/retrace-failure-index.json")); assert data["root"]["children"] == []'
+
+          docker compose --file compose.yaml run --rm --no-deps agent \
+            replay --recording recordings/examples/failure.retrace --extract
+          failure_pid_file="$(find recordings/examples/failure.d -maxdepth 1 -name '*.bin' -print -quit)"
+          set +e
+          failure_output="$(docker compose --file compose.yaml run --rm --no-deps agent \
+            replay "${failure_pid_file}" 2>&1)"
+          failure_status=$?
+          set -e
+          printf '%s\n' "${failure_output}"
+          test "${failure_status}" -eq 1
+          grep -F "AttributeError: 'NoneType' object has no attribute 'strip'" \
+            <<<"${failure_output}"
+
+          docker compose --file compose.yaml run --rm --no-deps agent \
+            replay --recording recordings/examples/success.retrace --extract
+          success_pid_file="$(find recordings/examples/success.d -maxdepth 1 -name '*.bin' -print -quit)"
+          success_output="$(docker compose --file compose.yaml run --rm --no-deps agent \
+            replay "${success_pid_file}")"
+          printf '%s\n' "${success_output}"
+          grep -F '"decision":"escalate_specialist"' <<<"${success_output}"
+
+          docker compose --file compose.yaml run --rm --no-deps agent \
+            replay --recording recordings/examples/failure.retrace --workspace
+          test -s recordings/examples/failure.code-workspace
+
       - name: Verify both reviewed recordings through DAP
         run: |
           DEMO_UID=$(id -u) DEMO_GID=$(id -g) \

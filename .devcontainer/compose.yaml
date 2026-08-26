@@ -1,14 +1,27 @@
 services:
   workspace:
     image: retrace-model-decision-demo:py312
+    build:
+      context: .
+      dockerfile: Dockerfile
     working_dir: /app
     init: true
     command: ["sleep", "infinity"]
     environment:
       DEMO_ROOT: /app
       DEMO_GENERATED_ROOT: /app/generated
+      HOME: /home/vscode
+      MODEL_GATEWAY_URL: http://model-gateway:8091
+      OTEL_SDK_DISABLED: "true"
       PYTHONPATH: /app
     volumes:
       - .:/app:cached
     mem_limit: 2g
     cpus: 2
+    networks:
+      - demo
+
+  model-gateway:
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen3:1.7b

@@ -7,6 +7,8 @@ ENV PYTHONPATH=/app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl make \
     && command -v make \
+    && groupadd --gid 1000 vscode \
+    && useradd --uid 1000 --gid vscode --create-home --shell /bin/bash vscode \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.lock.txt /tmp/requirements.lock.txt
@@ -18,4 +20,5 @@ RUN python -m pip install --requirement /tmp/requirements.lock.txt \
 
 COPY . /app
 WORKDIR /app
+USER vscode
 CMD ["python", "-m", "agent.main"]

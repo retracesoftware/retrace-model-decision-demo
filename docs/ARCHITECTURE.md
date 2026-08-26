@@ -53,7 +53,7 @@ Docker sidecar
       | /v1/decision
       v
 Dev Container
-  retracepython -m worker --request-json ...
+  RETRACE_RECORDING=... python -m worker --request-json ...
       |
       +-- worker.__main__
       +-- worker.decision_agent

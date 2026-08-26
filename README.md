@@ -152,6 +152,20 @@ For bundled replay and VS Code debugging:
 - Visual Studio Code;
 - the VS Code **Dev Containers** extension.
 
+Verify Docker and VS Code from a normal host terminal, then install the Dev
+Containers extension if it is not already present:
+
+```bash
+docker info
+code --version
+code --install-extension ms-vscode-remote.remote-containers
+```
+
+If `code` is not available in a macOS shell, open VS Code, run
+**Shell Command: Install 'code' command in PATH** from the Command Palette,
+and open a new terminal. The initial Dev Container build requires internet
+access to download the base image, Python packages, and VS Code extensions.
+
 For fresh model calls and fresh recordings, also install
 [Ollama](https://ollama.com/download) on the host. The Dev Container connects
 to it through `host.docker.internal`.
@@ -432,7 +446,6 @@ The Docker image enabled Retrace's environment hook while it was built. Set
 the same ordinary Python command:
 
 ```bash
-mkdir -p recordings/live
 RETRACE_RECORDING=recordings/live/run-01.retrace python -m worker --request-json "$(cat examples/refund-request.json)"
 ```
 
@@ -445,6 +458,10 @@ RETRACE_RECORDING=<trace path> python <normal application command and arguments>
 `RETRACE_RECORDING` both activates the preinstalled hook and names the trace.
 Without that variable, `python -m worker ...` remains the unrecorded command
 shown in the previous section.
+
+The recording path may contain directories that do not exist yet. Retrace
+creates those parent directories together with the `.retrace` file, so no
+separate `mkdir` command is required.
 
 The application may succeed or fail. In both cases,
 `recordings/live/run-01.retrace` should exist:

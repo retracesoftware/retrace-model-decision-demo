@@ -277,6 +277,8 @@ def test_debugger_documentation_matches_active_breakpoint_workflow() -> None:
     assert "./recordings/live/run-01.retrace --workspace" in readme
     assert "recordings/examples/failure.retrace" in readme
     assert "recordings/examples/success.retrace" in readme
+    assert "Retrace\ncreates those parent directories" in readme
+    assert "mkdir -p recordings/live" not in readme
     assert "make replay-example" not in readme
     assert "make investigate" not in readme
 

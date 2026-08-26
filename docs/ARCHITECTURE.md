@@ -53,7 +53,7 @@ Docker sidecar
       | /v1/decision
       v
 Dev Container
-  retracepython -m worker --request-json ...
+  RETRACE_RECORDING=... python -m worker --request-json ...
       |
       +-- worker.__main__
       +-- worker.decision_agent
@@ -170,24 +170,28 @@ The self-service path contains no demo wrapper around Retrace:
 python -m worker ...
   ordinary application run
 
-retracepython --recording recordings/live/run-01.retrace -m worker ...
-  same command recorded by Retrace
+RETRACE_RECORDING=recordings/live/run-01.retrace python -m worker ...
+  same command recorded through the preinstalled environment hook
 
-replay --recording recordings/live/run-01.retrace --index
+./recordings/live/run-01.retrace --index
   inspect recorded process metadata
 
-replay --recording recordings/live/run-01.retrace --extract
+./recordings/live/run-01.retrace --extract
   extract executable per-process PidFiles
 
-replay recordings/live/run-01.d/<pid>.bin
+./recordings/live/run-01.d/<pid>.bin
   re-execute the application against recorded external results
 
-replay --recording recordings/live/run-01.retrace --workspace
+./recordings/live/run-01.retrace --workspace
   generate a VS Code workspace selecting that recording
 ```
 
 The `.retrace` recording is the source artifact. Extraction creates a `.d`
 directory containing one root `.bin` PidFile for this application.
+
+The image enables Retrace's environment hook during its build. The hook is
+inactive for ordinary Python commands and enters the recording path only when
+`RETRACE_RECORDING`, `RETRACE=1`, or `RETRACE_CONFIG` activates it.
 
 ## Reviewed Recordings
 

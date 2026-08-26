@@ -15,24 +15,26 @@ own project:
 python application command
         |
         v
-retracepython --recording ... <the same application command>
+RETRACE_RECORDING=... python <the same application command>
         |
         v
-replay --recording ... --extract
+./recording.retrace --extract
         |
         v
-replay <extracted-pid-file>
+./recording.d/<pid>.bin
         |
         v
-replay --recording ... --workspace
+./recording.retrace --workspace
         |
         v
 VS Code + Retrace Debug Extension
 ```
 
 Docker provides a clean Python 3.12 environment with Retrace already installed.
-It does not replace or hide the Retrace CLI. You type `retracepython` and
-`replay` yourself in the Dev Container terminal.
+The image also installs Retrace's inactive environment hook. Ordinary `python`
+commands remain unchanged until `RETRACE_RECORDING` or `RETRACE=1` is set. You
+therefore record the same application command you would normally run, then use
+the executable recording and extracted PidFile directly.
 
 ## What You Can Do
 
@@ -42,8 +44,8 @@ Two paths are available:
    successful execution and one real failed execution. No model service or
    internet connection is needed after the container image has been built.
 2. **Capture your own model decisions.** Run Qwen repeatedly, record each
-   invocation with `retracepython`, replay any result, and open that exact
-   recording in VS Code.
+   invocation by setting `RETRACE_RECORDING`, replay any result, and open that
+   exact recording in VS Code.
 
 By the end, you will have verified that:
 
@@ -121,7 +123,7 @@ Docker
     Retrace VS Code extension
        |
        v
-    retracepython -m worker                 one recorded Python process
+    RETRACE_RECORDING=... python -m worker  one recorded Python process
        |
        v
     parse response -> route score -> output or AttributeError
@@ -149,6 +151,20 @@ For bundled replay and VS Code debugging:
 - Docker Desktop or Docker Engine with Compose;
 - Visual Studio Code;
 - the VS Code **Dev Containers** extension.
+
+Verify Docker and VS Code from a normal host terminal, then install the Dev
+Containers extension if it is not already present:
+
+```bash
+docker info
+code --version
+code --install-extension ms-vscode-remote.remote-containers
+```
+
+If `code` is not available in a macOS shell, open VS Code, run
+**Shell Command: Install 'code' command in PATH** from the Command Palette,
+and open a new terminal. The initial Dev Container build requires internet
+access to download the base image, Python packages, and VS Code extensions.
 
 For fresh model calls and fresh recordings, also install
 [Ollama](https://ollama.com/download) on the host. The Dev Container connects
@@ -198,6 +214,7 @@ python -m pip show retracesoftware
 python -m pip show retracesoftware-dap
 command -v retracepython
 command -v replay
+python -c "from retracesoftware.retrace_venv import current_hook_pth_target; print(current_hook_pth_target().is_file())"
 ```
 
 Expected highlights:
@@ -208,6 +225,7 @@ Python 3.12.13
 Version: 0.2.29
 /usr/local/bin/retracepython
 /usr/local/bin/replay
+True
 ```
 
 If the example recordings are absent, prepare them again:
@@ -224,7 +242,7 @@ in the repository. It does not record, replay, or debug the application.
 First inspect the process tree:
 
 ```bash
-replay --recording recordings/examples/failure.retrace --index
+./recordings/examples/failure.retrace --index
 ```
 
 The JSON shows one root `exec` process with `children: []`, its original
@@ -233,7 +251,7 @@ arguments, Python version, working directory, and recording metadata.
 Extract the recording:
 
 ```bash
-replay --recording recordings/examples/failure.retrace --extract
+./recordings/examples/failure.retrace --extract
 ```
 
 This creates `recordings/examples/failure.d/`. Select its only recorded Python
@@ -241,7 +259,7 @@ process and replay it:
 
 ```bash
 FAILURE_PID_FILE="$(find recordings/examples/failure.d -maxdepth 1 -name '*.bin' -print -quit)"
-replay "$FAILURE_PID_FILE"
+"$FAILURE_PID_FILE"
 ```
 
 The historical application output includes a model score of `65`, the
@@ -254,7 +272,7 @@ failed. That is the expected result, not a replay failure.
 Run the same replay again:
 
 ```bash
-replay "$FAILURE_PID_FILE"
+"$FAILURE_PID_FILE"
 ```
 
 It reproduces the same model response hash, route, local state, exception, and
@@ -263,10 +281,10 @@ traceback. No Ollama service is required for either replay.
 ## 3. Replay The Bundled Successful Execution
 
 ```bash
-replay --recording recordings/examples/success.retrace --index
-replay --recording recordings/examples/success.retrace --extract
+./recordings/examples/success.retrace --index
+./recordings/examples/success.retrace --extract
 SUCCESS_PID_FILE="$(find recordings/examples/success.d -maxdepth 1 -name '*.bin' -print -quit)"
-replay "$SUCCESS_PID_FILE"
+"$SUCCESS_PID_FILE"
 ```
 
 This execution uses the same customer request and same model-request hash. Its
@@ -290,7 +308,7 @@ one success and one failure
 Generate a workspace using the installed replay tool:
 
 ```bash
-replay --recording recordings/examples/failure.retrace --workspace
+./recordings/examples/failure.retrace --workspace
 code recordings/examples/failure.code-workspace
 ```
 
@@ -423,32 +441,41 @@ Both are genuine model-selected outcomes.
 
 ## 7. Record A Fresh Execution With Retrace
 
-Run the same application command under `retracepython`:
+The Docker image enabled Retrace's environment hook while it was built. Set
+`RETRACE_RECORDING` to activate recording and choose the output path, then run
+the same ordinary Python command:
 
 ```bash
-mkdir -p recordings/live
-retracepython --recording recordings/live/run-01.retrace -m worker --request-json "$(cat examples/refund-request.json)"
+RETRACE_RECORDING=recordings/live/run-01.retrace python -m worker --request-json "$(cat examples/refund-request.json)"
 ```
 
-This is the normal Retrace recording pattern:
+This is the active-environment recording pattern:
 
 ```text
-retracepython [Retrace options] <normal Python command and arguments>
+RETRACE_RECORDING=<trace path> python <normal application command and arguments>
 ```
+
+`RETRACE_RECORDING` both activates the preinstalled hook and names the trace.
+Without that variable, `python -m worker ...` remains the unrecorded command
+shown in the previous section.
+
+The recording path may contain directories that do not exist yet. Retrace
+creates those parent directories together with the `.retrace` file, so no
+separate `mkdir` command is required.
 
 The application may succeed or fail. In both cases,
 `recordings/live/run-01.retrace` should exist:
 
 ```bash
 ls -lh recordings/live/run-01.retrace
-replay --recording recordings/live/run-01.retrace --index
+./recordings/live/run-01.retrace --index
 ```
 
 Record more independent invocations to observe model variation:
 
 ```bash
-retracepython --recording recordings/live/run-02.retrace -m worker --request-json "$(cat examples/refund-request.json)"
-retracepython --recording recordings/live/run-03.retrace -m worker --request-json "$(cat examples/refund-request.json)"
+RETRACE_RECORDING=recordings/live/run-02.retrace python -m worker --request-json "$(cat examples/refund-request.json)"
+RETRACE_RECORDING=recordings/live/run-03.retrace python -m worker --request-json "$(cat examples/refund-request.json)"
 ```
 
 Every command sends the same application input. Qwen may return different
@@ -459,10 +486,10 @@ scores and reasons. Each trace keeps the outcome of its own invocation.
 Use the same public replay commands as for the bundled examples:
 
 ```bash
-replay --recording recordings/live/run-01.retrace --index
-replay --recording recordings/live/run-01.retrace --extract
+./recordings/live/run-01.retrace --index
+./recordings/live/run-01.retrace --extract
 RUN_PID_FILE="$(find recordings/live/run-01.d -maxdepth 1 -name '*.bin' -print -quit)"
-replay "$RUN_PID_FILE"
+"$RUN_PID_FILE"
 ```
 
 Replay must reproduce the result of `run-01`, even if `run-02` and `run-03`
@@ -471,7 +498,7 @@ received different model decisions.
 To prove that replay does not need Qwen, stop Ollama on the host and run:
 
 ```bash
-replay "$RUN_PID_FILE"
+"$RUN_PID_FILE"
 ```
 
 The historical result still reappears. Start Ollama again before making any
@@ -482,7 +509,7 @@ new fresh recording.
 Generate and open a workspace for the exact trace you recorded:
 
 ```bash
-replay --recording recordings/live/run-01.retrace --workspace
+./recordings/live/run-01.retrace --workspace
 code recordings/live/run-01.code-workspace
 ```
 
@@ -503,40 +530,47 @@ the successful route, or open the bundled failure for the exception path.
 
 ## Retrace Command Reference
 
-Record a script:
+Record a script with the preinstalled environment hook:
 
 ```bash
-retracepython --recording recordings/example.retrace script.py --your-args
+RETRACE_RECORDING=recordings/example.retrace python script.py --your-args
 ```
 
 Record a module:
 
 ```bash
-retracepython --recording recordings/example.retrace -m package.module --your-args
+RETRACE_RECORDING=recordings/example.retrace python -m package.module --your-args
 ```
 
 Inspect the process tree:
 
 ```bash
-replay --recording recordings/example.retrace --index
+./recordings/example.retrace --index
 ```
 
 Extract recorded processes:
 
 ```bash
-replay --recording recordings/example.retrace --extract
+./recordings/example.retrace --extract
 ```
 
 Replay one extracted process:
 
 ```bash
-replay recordings/example.d/<pid>.bin
+./recordings/example.d/<pid>.bin
 ```
 
 Generate a VS Code workspace:
 
 ```bash
-replay --recording recordings/example.retrace --workspace
+./recordings/example.retrace --workspace
+```
+
+For a one-shot recording outside an enabled environment, the installed
+launcher remains available:
+
+```bash
+retracepython --recording recordings/example.retrace -m package.module --your-args
 ```
 
 Show help:
@@ -547,9 +581,9 @@ replay --help
 retrace --help
 ```
 
-The installed command is `retracepython`, not a repository-specific wrapper.
-The installed replay command is `replay`; `retrace-dap` exposes the same
-recording and DAP tooling for compatibility.
+The environment hook and `retracepython` both enter the same Retrace recording
+path. Executable `.retrace` and `.bin` files dispatch to the installed `replay`
+tool; `retrace-dap` exposes the same recording and DAP tooling for compatibility.
 
 ## Suggested Experiments
 

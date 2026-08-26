@@ -16,7 +16,9 @@ RUN python -m pip install --requirement /tmp/requirements.lock.txt \
     && python -m pip check \
     && test "$(python -c 'import sys; print(sys.version.split()[0])')" = "3.12.13" \
     && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware'))")" = "0.2.29" \
-    && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware-dap'))")" = "0.2.29"
+    && test "$(python -c "import importlib.metadata as m; print(m.version('retracesoftware-dap'))")" = "0.2.29" \
+    && python -m retracesoftware enable-hook \
+    && python -c "from retracesoftware.retrace_venv import current_hook_pth_target; assert current_hook_pth_target().is_file()"
 
 COPY . /app
 WORKDIR /app

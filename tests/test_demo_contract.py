@@ -272,11 +272,13 @@ def test_generated_workspaces_are_visibly_outcome_specific(
 def test_debugger_documentation_matches_active_breakpoint_workflow() -> None:
     readme = (ROOT / "README.md").read_text()
 
-    assert "retracepython --recording recordings/live/run-01.retrace" in readme
-    assert "replay --recording recordings/live/run-01.retrace --extract" in readme
-    assert "replay --recording recordings/live/run-01.retrace --workspace" in readme
+    assert "RETRACE_RECORDING=recordings/live/run-01.retrace python -m worker" in readme
+    assert "./recordings/live/run-01.retrace --extract" in readme
+    assert "./recordings/live/run-01.retrace --workspace" in readme
     assert "recordings/examples/failure.retrace" in readme
     assert "recordings/examples/success.retrace" in readme
+    assert "Retrace\ncreates those parent directories" in readme
+    assert "mkdir -p recordings/live" not in readme
     assert "make replay-example" not in readme
     assert "make investigate" not in readme
 
@@ -309,6 +311,10 @@ def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
 
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "USER vscode" in dockerfile
+    assert "python -m retracesoftware enable-hook" in dockerfile
+    assert dockerfile.index("python -m retracesoftware enable-hook") < dockerfile.index(
+        "USER vscode"
+    )
 
 
 def test_supported_docker_architectures_use_native_reviewed_artifacts() -> None:

@@ -5,7 +5,7 @@ setup and prepare the reviewed recordings before starting:
 
 ```bash
 python -m scripts.prepare_examples
-replay --recording recordings/examples/failure.retrace --workspace
+./recordings/examples/failure.retrace --workspace
 code recordings/examples/failure.code-workspace
 ```
 
@@ -147,7 +147,7 @@ Disable **Raised Exceptions** before the next source-breakpoint lab.
 Generate and open its workspace:
 
 ```bash
-replay --recording recordings/examples/success.retrace --workspace
+./recordings/examples/success.retrace --workspace
 code recordings/examples/success.code-workspace
 ```
 
@@ -173,7 +173,7 @@ the historical Qwen response and the deterministic route it selected.
 For any trace you create yourself:
 
 ```bash
-replay --recording recordings/live/run-01.retrace --workspace
+./recordings/live/run-01.retrace --workspace
 code recordings/live/run-01.code-workspace
 ```
 

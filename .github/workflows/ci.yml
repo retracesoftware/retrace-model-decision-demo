@@ -77,7 +77,10 @@ jobs:
           success_output="$(docker compose --file compose.yaml run --rm --no-deps agent \
             replay "${success_pid_file}")"
           printf '%s\n' "${success_output}"
-          grep -F '"decision":"escalate_specialist"' <<<"${success_output}"
+          success_decision="$(python3 -c \
+            'import json; print(json.load(open("recordings/examples/success.expected.json"))["decision"]["decision"])')"
+          grep -F '"event":"invocation_completed"' <<<"${success_output}"
+          grep -F "\"decision\":\"${success_decision}\"" <<<"${success_output}"
 
           docker compose --file compose.yaml run --rm --no-deps agent \
             replay --recording recordings/examples/failure.retrace --workspace

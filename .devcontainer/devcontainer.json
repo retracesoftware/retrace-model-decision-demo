@@ -5,12 +5,14 @@
     "compose.yaml"
   ],
   "service": "workspace",
+  "remoteUser": "vscode",
   "runServices": [
-    "workspace"
+    "workspace",
+    "model-gateway"
   ],
   "workspaceFolder": "/app",
   "shutdownAction": "stopCompose",
-  "postCreateCommand": "python -m scripts.prepare_vscode_pair",
+  "postCreateCommand": "python -m scripts.prepare_examples",
   "hostRequirements": {
     "cpus": 2,
     "memory": "3gb",

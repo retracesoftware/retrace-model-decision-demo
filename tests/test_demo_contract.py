@@ -19,6 +19,7 @@ from external_world.model_gateway import SAMPLING_OPTIONS, sha256_json
 from scripts.agent_client import decision_request
 from scripts.demo_state import CASE
 from scripts.proof_manifest import verify_recording_proof
+from scripts.prepare_examples import prepare as prepare_examples
 from scripts.prepare_vscode import customize_workspace
 from scripts.prepare_vscode_pair import vscode_open_commands
 from scripts import platforms
@@ -39,7 +40,6 @@ from scripts.verify_dap import (
 
 ROOT = Path(__file__).resolve().parents[1]
 RETRACE_EXTENSION_ID = "RetraceSoftware.retrace-debug-extension"
-SELECTED_RECORDING = "/app/generated/recordings/selected-failure.retrace"
 
 
 def test_sampling_is_nondeterministic_by_configuration() -> None:
@@ -166,7 +166,7 @@ def test_manifest_publication_is_atomic(tmp_path) -> None:
     assert not path.with_suffix(".tmp").exists()
 
 
-def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> None:
+def test_devcontainer_provides_the_self_service_retrace_environment() -> None:
     devcontainer = json.loads(
         (ROOT / ".devcontainer" / "devcontainer.json").read_text()
     )
@@ -179,13 +179,41 @@ def test_devcontainer_uses_current_retrace_extension_and_failed_recording() -> N
     assert vscode["settings"]["remote.extensionKind"][RETRACE_EXTENSION_ID] == [
         "workspace"
     ]
-    assert devcontainer["postCreateCommand"] == (
-        "python -m scripts.prepare_vscode_pair"
-    )
+    assert devcontainer["runServices"] == ["workspace", "model-gateway"]
+    assert devcontainer["remoteUser"] == "vscode"
+    assert devcontainer["postCreateCommand"] == "python -m scripts.prepare_examples"
+    assert devcontainer["hostRequirements"] == {
+        "cpus": 2,
+        "memory": "3gb",
+        "storage": "3gb",
+    }
 
     workspace_settings = json.loads((ROOT / ".vscode" / "settings.json").read_text())
-    assert workspace_settings["retrace.recording"] == SELECTED_RECORDING
+    assert "retrace.recording" not in workspace_settings
     assert workspace_settings["terminal.integrated.cwd"] == "/app"
+
+
+def test_public_input_file_matches_the_application_fixture() -> None:
+    request = json.loads((ROOT / "examples" / "refund-request.json").read_text())
+
+    assert request == CASE
+
+
+def test_prepare_examples_copies_and_verifies_native_recordings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "recordings" / "examples"
+    monkeypatch.setattr("scripts.prepare_examples.DESTINATION", destination)
+
+    assert prepare_examples("arm64") == destination
+
+    for outcome in ("success", "failure"):
+        copied = destination / f"{outcome}.retrace"
+        assert copied.is_file()
+        assert copied.stat().st_mode & 0o111
+        assert (destination / f"{outcome}.expected.json").is_file()
+        assert (destination / f"{outcome}.proof.json").is_file()
 
 
 @pytest.mark.parametrize(
@@ -243,17 +271,14 @@ def test_generated_workspaces_are_visibly_outcome_specific(
 
 def test_debugger_documentation_matches_active_breakpoint_workflow() -> None:
     readme = (ROOT / "README.md").read_text()
-    readme_one_line = readme.replace("\n", " ")
-    walkthrough = (ROOT / "docs" / "GUIDED_WALKTHROUGH.md").read_text()
-    architecture = (ROOT / "docs" / "ARCHITECTURE.md").read_text()
 
-    assert "use Continue when the new target lies later" in readme
-    assert "use **Restart Debugging** when the new target lies earlier" in readme
-    assert "there is no local variable named `result`" in readme_one_line
-    assert "## Manage Breakpoints During Replay" in walkthrough
-    assert "How To Restart A Debugging Scene" not in walkthrough
-    assert "DAP `setBreakpoints` update" in architecture
-    assert "result  ->" not in readme
+    assert "retracepython --recording recordings/live/run-01.retrace" in readme
+    assert "replay --recording recordings/live/run-01.retrace --extract" in readme
+    assert "replay --recording recordings/live/run-01.retrace --workspace" in readme
+    assert "recordings/examples/failure.retrace" in readme
+    assert "recordings/examples/success.retrace" in readme
+    assert "make replay-example" not in readme
+    assert "make investigate" not in readme
 
 
 def test_vscode_pair_opens_success_then_reuses_current_window_for_failure() -> None:
@@ -277,6 +302,13 @@ def test_compose_writes_bind_mounted_artifacts_as_host_user() -> None:
     assert "platform: linux/amd64" not in devcontainer_compose
     assert "mem_limit: 2g" in devcontainer_compose
     assert "cpus: 2" in devcontainer_compose
+    assert "HOME: /home/vscode" in devcontainer_compose
+    assert 'OTEL_SDK_DISABLED: "true"' in devcontainer_compose
+    assert "ollama/ollama" not in devcontainer_compose
+    assert "http://host.docker.internal:11434" in devcontainer_compose
+
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "USER vscode" in dockerfile
 
 
 def test_supported_docker_architectures_use_native_reviewed_artifacts() -> None:

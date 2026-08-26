@@ -2,27 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Retrace: open passing and failing side by side",
+      "label": "Demo: run normally",
       "type": "shell",
-      "command": "make vscode-pair",
+      "command": "python -m worker --request-json \"$(cat examples/refund-request.json)\"",
       "problemMatcher": []
     },
     {
-      "label": "Retrace: verify both DAP sessions concurrently",
+      "label": "Retrace: record a fresh execution",
       "type": "shell",
-      "command": "make verify-vscode-pair",
-      "problemMatcher": []
-    },
-    {
-      "label": "Retrace: verify selected model failure",
-      "type": "shell",
-      "command": "python /app/scripts/verify_dap.py --recording /app/generated/recordings/selected-failure.retrace --expected /app/generated/recordings/selected-failure.expected.json --transcript /app/generated/transcripts/vscode-task-dap.json",
-      "problemMatcher": []
-    },
-    {
-      "label": "Retrace: prepare selected failing recording",
-      "type": "shell",
-      "command": "python -m scripts.prepare_vscode",
+      "command": "mkdir -p recordings/live && retracepython --recording recordings/live/my-run.retrace -m worker --request-json \"$(cat examples/refund-request.json)\"",
       "problemMatcher": []
     }
   ]

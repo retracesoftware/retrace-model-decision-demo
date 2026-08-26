@@ -1,7 +1,8 @@
 generated/*
 !generated/.gitkeep
+recordings/*
+!recordings/.gitkeep
 *.code-workspace
 __pycache__/
 .pytest_cache/
 .ruff_cache/
-

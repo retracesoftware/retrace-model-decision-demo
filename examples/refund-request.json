@@ -1,0 +1,5 @@
+{
+  "case_id": "CASE-MODEL-NONDETERMINISM-001",
+  "serial_number": null,
+  "user_prompt": "Sofia requests a GBP 125 refund for a damaged medical-device accessory. It is day 31 of a 30-day self-service window. A photo supports packaging damage but the serial number is partly obscured. She has four years of good account history and no earlier refunds. The accessory is not safety-critical but accompanies regulated equipment. Decide the next action now."
+}
